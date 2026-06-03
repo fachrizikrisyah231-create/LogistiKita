@@ -1,0 +1,23 @@
+{
+  "name": "logistikita-mock-server",
+  "version": "1.0.0",
+  "description": "Mock server: SmartBank, API Gateway, dan Trigger untuk LogistiKita",
+  "scripts": {
+    "start": "concurrently \"node smartbank.mock.js\" \"node gateway.mock.js\" \"node trigger.mock.js\"",
+    "start:smartbank": "node smartbank.mock.js",
+    "start:gateway": "node gateway.mock.js",
+    "start:trigger": "node trigger.mock.js",
+    "dev": "concurrently \"nodemon smartbank.mock.js\" \"nodemon gateway.mock.js\" \"nodemon trigger.mock.js\""
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.0"
+  }
+}
