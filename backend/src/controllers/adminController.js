@@ -4,6 +4,7 @@ const Shipment    = require('../models/Shipment');
 const TrackingLog = require('../models/TrackingLog');
 const respond     = require('../utils/responseHelper');
 const logger      = require('../utils/logger');
+const axios       = require('axios');
 
 /**
  * GET /logistikita/admin/shipments
@@ -57,12 +58,32 @@ async function updateShipmentStatus(req, res) {
     // Update status di database
     await Shipment.updateStatus(order_id, status);
 
+    let finalKeterangan = keterangan;
+    if (!finalKeterangan && status === 'SHIPPED') {
+      finalKeterangan = 'Pesanan sedang dikirim';
+    } else if (!finalKeterangan) {
+      finalKeterangan = `Status diperbarui menjadi ${status} oleh Admin`;
+    }
+
     // Tambah riwayat tracking baru
     await TrackingLog.insert(
       shipment.id,
       status,
-      keterangan || `Status diperbarui menjadi ${status} oleh Admin`
+      finalKeterangan
     );
+
+    // Kiriim Webhook ke Aplikasi Asal (Marketplace/SupplierHub)
+    if (shipment.source_app) {
+      axios.post(`http://localhost:5500/webhook/${shipment.source_app}`, {
+        order_id,
+        shipment_id: shipment.id,
+        status: status,
+        keterangan: finalKeterangan,
+        timestamp: new Date().toISOString()
+      }).catch(err => {
+        logger.error(`[Webhook] Gagal mengirim callback ke ${shipment.source_app} untuk order ${order_id}:`, err.message);
+      });
+    }
 
     return respond.success(res, {
       message: 'Status pengiriman berhasil diperbarui.',

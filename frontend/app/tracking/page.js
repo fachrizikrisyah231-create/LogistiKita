@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import TrackingForm from "@/components/tracking/TrackingForm";
 import TrackingTimeline from "@/components/tracking/TrackingTimeline";
 import ShipmentSummary from "@/components/tracking/ShipmentSummary";
@@ -9,16 +9,14 @@ export default function TrackingPage() {
   const [loading, setLoading] = useState(false);
   const [trackingData, setTrackingData] = useState(null);
   const [error, setError] = useState("");
+  const [activeOrderId, setActiveOrderId] = useState("");
 
-  const handleTrack = async (orderId) => {
-    if (!orderId || orderId.length < 5) {
-      setError("Order ID tidak valid. Silakan coba lagi dengan Order ID yang benar.");
-      return;
+  const fetchTrackingData = useCallback(async (orderId, isInitial = false) => {
+    if (isInitial) {
+      setLoading(true);
+      setError("");
+      setTrackingData(null);
     }
-
-    setLoading(true);
-    setError("");
-    setTrackingData(null);
 
     try {
       // 1. Dapatkan token dummy (USR-001) untuk bisa mengakses API Tracking
@@ -59,13 +57,33 @@ export default function TrackingPage() {
       };
 
       setTrackingData(mappedData);
+      
+      if (isInitial) {
+        setActiveOrderId(orderId);
+      }
     } catch (err) {
       console.error(err);
-      setError("Gagal menghubungi server. Pastikan Backend dan Mock Server berjalan.");
+      if (isInitial) setError("Gagal menghubungi server. Pastikan Backend dan Mock Server berjalan.");
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
+  }, []);
+
+  const handleTrack = (orderId) => {
+    if (!orderId || orderId.length < 5) {
+      setError("Order ID tidak valid. Silakan coba lagi dengan Order ID yang benar.");
+      return;
+    }
+    fetchTrackingData(orderId, true);
   };
+
+  useEffect(() => {
+    if (!activeOrderId) return;
+    const interval = setInterval(() => {
+      fetchTrackingData(activeOrderId, false);
+    }, 3000); // Poll setiap 3 detik
+    return () => clearInterval(interval);
+  }, [activeOrderId, fetchTrackingData]);
 
   return (
     <div className="flex flex-col min-h-screen bg-canvas-soft">

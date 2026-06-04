@@ -23,6 +23,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// ─── STATE WEBHOOK ────────────────────────────────────────────────────
+const webhookLogs = [];
+
+// ─── POST /webhook/:app ───────────────────────────────────────────────
+app.post('/webhook/:app', (req, res) => {
+  const { app: sourceApp } = req.params;
+  const payload = req.body;
+  console.log(`[${new Date().toISOString()}] [Webhook] Menerima update status dari LogistiKita untuk ${sourceApp}`);
+  
+  webhookLogs.push({
+    id: webhookLogs.length + 1,
+    timestamp: new Date().toISOString(),
+    source_app: sourceApp,
+    payload
+  });
+
+  res.status(200).json({ success: true, message: 'Webhook diterima oleh mock ' + sourceApp });
+});
+
+// ─── GET /webhook/logs ────────────────────────────────────────────────
+app.get('/webhook/logs', (req, res) => {
+  const limit = parseInt(req.query.limit) || 10;
+  const logs = webhookLogs.slice(-limit).reverse();
+  res.json({ total: webhookLogs.length, logs });
+});
+
 // ─── HELPERS ──────────────────────────────────────────────────────────
 function log(method, path, extra = '') {
   console.log(`[${new Date().toISOString()}] [Trigger] ${method} ${path} ${extra}`);
