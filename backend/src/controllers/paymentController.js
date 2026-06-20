@@ -44,8 +44,8 @@ async function pembayaranLogistik(req, res) {
 
     if (result.success) {
       // Update shipment status
-      await Shipment.updateStatus(order_id, 'PROCESSING', result.data.transaction_id);
-      await TrackingLog.insert(shipment_id, 'PROCESSING', 'Pembayaran ongkir berhasil, menunggu kurir');
+      await Shipment.updateStatus(order_id, 'PICKUP', result.data.transaction_id);
+      await TrackingLog.insert(shipment_id, 'PICKUP', 'Pembayaran ongkir berhasil, menunggu kurir');
       await TransactionLog.insertSuccess({
         shipment_id, order_id, user_id,
         amount: total_biaya, ongkir, fee_layanan,
@@ -57,7 +57,7 @@ async function pembayaranLogistik(req, res) {
       return respond.success(res, {
         payment_status:  'SUCCESS',
         transaction_id:  result.data.transaction_id,
-        shipment_status: 'PROCESSING',
+        shipment_status: 'PICKUP',
         deducted_amounts: result.data.deducted_amounts,
         message:         'Pembayaran ongkir berhasil diproses oleh SmartBank.',
       });

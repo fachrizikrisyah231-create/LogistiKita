@@ -6,8 +6,25 @@
  * @param {object}  data
  * @param {number}  [statusCode=200]
  */
-function success(res, data, statusCode = 200) {
-  return res.status(statusCode).json({ success: true, data });
+function success(res, messageOrData, dataOrStatusCode = null, statusCode = null) {
+  let message = 'Success';
+  let data = {};
+  let status = 200;
+
+  if (typeof messageOrData === 'string') {
+    message = messageOrData;
+    if (dataOrStatusCode !== null && typeof dataOrStatusCode === 'object') {
+      data = dataOrStatusCode;
+      if (typeof statusCode === 'number') status = statusCode;
+    } else if (typeof dataOrStatusCode === 'number') {
+      status = dataOrStatusCode;
+    }
+  } else {
+    data = messageOrData;
+    if (typeof dataOrStatusCode === 'number') status = dataOrStatusCode;
+  }
+
+  return res.status(status).json({ success: true, message, data });
 }
 
 /**

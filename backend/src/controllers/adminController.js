@@ -1,102 +1,164 @@
 'use strict';
 
-const Shipment    = require('../models/Shipment');
-const TrackingLog = require('../models/TrackingLog');
-const respond     = require('../utils/responseHelper');
-const logger      = require('../utils/logger');
-const axios       = require('axios');
+const db = require('../config/database');
+const bcrypt = require('bcryptjs');
+const respond = require('../utils/responseHelper');
+const User = require('../models/User');
+const Branch = require('../models/Branch');
 
-/**
- * GET /logistikita/admin/shipments
- *
- * Mengambil semua data shipment untuk panel admin.
- * Endpoint ini sengaja tidak dilindungi otentikasi JWT penuh untuk
- * mempermudah proses testing.
- */
-async function getAllShipments(req, res) {
-  logger.info('[Controller] GET /admin/shipments');
+class AdminController {
+  async getOverview(req, res) {
+    try {
+      const [[{ total_users }]] = await db.query('SELECT COUNT(*) as total_users FROM users');
+      const [[{ total_shipments }]] = await db.query('SELECT COUNT(*) as total_shipments FROM shipments');
+      const [[{ total_revenue }]] = await db.query('SELECT SUM(fee_layanan) as total_revenue FROM shipments WHERE status = "DELIVERED"');
+      const [[{ pending_shipments }]] = await db.query('SELECT COUNT(*) as pending_shipments FROM shipments WHERE status = "PENDING"');
 
-  try {
-    const shipments = await Shipment.getAll();
-    return respond.success(res, shipments);
-  } catch (err) {
-    logger.error('[Controller] getAllShipments error:', err.message);
-    return respond.error(res, 'INTERNAL_ERROR', 'Gagal mengambil data pengiriman.', 500);
-  }
-}
-
-/**
- * PUT /logistikita/admin/shipments/:order_id/status
- *
- * Memperbarui status shipment. Endpoint khusus admin.
- */
-async function updateShipmentStatus(req, res) {
-  const { order_id } = req.params;
-  const { status, keterangan } = req.body;
-
-  if (!status) {
-    return respond.error(res, 'VALIDATION_ERROR', 'Atribut "status" wajib diisi.', 400);
-  }
-
-  const validStatuses = ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'FAILED'];
-  if (!validStatuses.includes(status)) {
-    return respond.error(res, 'VALIDATION_ERROR', 'Status tidak valid.', 400);
-  }
-
-  logger.info(`[Controller] PUT /admin/shipments/${order_id}/status -> ${status}`);
-
-  try {
-    const shipment = await Shipment.findByOrderId(order_id);
-    if (!shipment) {
-      return respond.error(res, 'SHIPMENT_NOT_FOUND', `Pengiriman ${order_id} tidak ditemukan.`, 404);
-    }
-
-    if (shipment.status === status) {
-      return respond.success(res, { message: 'Status tidak berubah.' });
-    }
-
-    // Update status di database
-    await Shipment.updateStatus(order_id, status);
-
-    let finalKeterangan = keterangan;
-    if (!finalKeterangan && status === 'SHIPPED') {
-      finalKeterangan = 'Pesanan sedang dikirim';
-    } else if (!finalKeterangan) {
-      finalKeterangan = `Status diperbarui menjadi ${status} oleh Admin`;
-    }
-
-    // Tambah riwayat tracking baru
-    await TrackingLog.insert(
-      shipment.id,
-      status,
-      finalKeterangan
-    );
-
-    // Kiriim Webhook ke Aplikasi Asal (Marketplace/SupplierHub)
-    if (shipment.source_app) {
-      axios.post(`http://localhost:5500/webhook/${shipment.source_app}`, {
-        order_id,
-        shipment_id: shipment.id,
-        status: status,
-        keterangan: finalKeterangan,
-        timestamp: new Date().toISOString()
-      }).catch(err => {
-        logger.error(`[Webhook] Gagal mengirim callback ke ${shipment.source_app} untuk order ${order_id}:`, err.message);
+      respond.success(res, 'Admin Overview', {
+        total_users,
+        total_shipments,
+        total_revenue: total_revenue || 0,
+        pending_shipments
       });
+    } catch (err) {
+      respond.error(res, 'FETCH_FAILED', err.message, 500);
     }
+  }
 
-    return respond.success(res, {
-      message: 'Status pengiriman berhasil diperbarui.',
-      order_id,
-      status_baru: status
-    });
-  } catch (err) {
-    logger.error('[Controller] updateShipmentStatus error:', err.message);
-    return respond.error(res, 'INTERNAL_ERROR', 'Gagal memperbarui status pengiriman.', 500);
+  async getKeuangan(req, res) {
+    try {
+      const [transactions] = await db.query('SELECT * FROM transaction_logs ORDER BY created_at DESC LIMIT 100');
+      const [[{ total_revenue }]] = await db.query('SELECT SUM(fee_layanan) as total_revenue FROM transaction_logs WHERE payment_status = "SUCCESS"');
+      
+      respond.success(res, 'Data Keuangan', {
+        total_revenue: total_revenue || 0,
+        transactions
+      });
+    } catch (err) {
+      respond.error(res, 'FETCH_FAILED', err.message, 500);
+    }
+  }
+
+  async getUsers(req, res) {
+    try {
+      const users = await User.getAll();
+      respond.success(res, 'Daftar User', users);
+    } catch (err) {
+      respond.error(res, 'FETCH_FAILED', err.message, 500);
+    }
+  }
+
+  async createUser(req, res) {
+    try {
+      const { name, email, password, role, branch_id } = req.body;
+      if (!name || !email || !password) {
+        return respond.error(res, 'VALIDATION_ERROR', 'Name, email, password wajib diisi', 400);
+      }
+
+      const [existing] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
+      if (existing.length > 0) return respond.error(res, 'DUPLICATE', 'Email sudah terdaftar', 400);
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const userId = `USR-${Date.now()}`;
+
+      await db.query(
+        'INSERT INTO users (id, name, email, password, role, branch_id) VALUES (?, ?, ?, ?, ?, ?)',
+        [userId, name, email, hashedPassword, role || 'customer', branch_id || null]
+      );
+
+      respond.success(res, 'User berhasil dibuat', { id: userId, name, email, role }, 201);
+    } catch (err) {
+      respond.error(res, 'CREATE_FAILED', err.message, 500);
+    }
+  }
+
+  async updateUser(req, res) {
+    try {
+      const { id } = req.params;
+      const data = req.body;
+      const success = await User.update(id, data);
+      if (!success) return respond.error(res, 'UPDATE_FAILED', 'Gagal update user atau data tidak berubah', 400);
+      respond.success(res, 'User berhasil diupdate');
+    } catch (err) {
+      respond.error(res, 'UPDATE_FAILED', err.message, 500);
+    }
+  }
+
+  async getCabang(req, res) {
+    try {
+      const branches = await Branch.getAll();
+      respond.success(res, 'Daftar Cabang', branches);
+    } catch (err) {
+      respond.error(res, 'FETCH_FAILED', err.message, 500);
+    }
+  }
+
+  async createCabang(req, res) {
+    try {
+      const { name, city, latitude, longitude, route_order } = req.body;
+      if (!name || !city || latitude === undefined || longitude === undefined || route_order === undefined) {
+        return respond.error(res, 'VALIDATION_ERROR', 'Semua field wajib diisi', 400);
+      }
+
+      const id = `BRC-${Date.now()}`;
+      await Branch.create({ id, name, city, latitude, longitude, route_order });
+      respond.success(res, 'Cabang berhasil dibuat', { id, name }, 201);
+    } catch (err) {
+      respond.error(res, 'CREATE_FAILED', err.message, 500);
+    }
+  }
+
+  async updateCabang(req, res) {
+    try {
+      const { id } = req.params;
+      const data = req.body;
+      const success = await Branch.update(id, data);
+      if (!success) return respond.error(res, 'UPDATE_FAILED', 'Gagal update cabang', 400);
+      respond.success(res, 'Cabang berhasil diupdate');
+    } catch (err) {
+      respond.error(res, 'UPDATE_FAILED', err.message, 500);
+    }
+  }
+
+  async getKurirList(req, res) {
+    try {
+      const kurir = await User.getAll('kurir');
+      respond.success(res, 'Daftar Kurir', kurir);
+    } catch (err) {
+      respond.error(res, 'FETCH_FAILED', err.message, 500);
+    }
+  }
+
+  async getShipments(req, res) {
+    try {
+      const [shipments] = await db.query('SELECT * FROM shipments ORDER BY created_at DESC');
+      respond.success(res, 'Daftar Pengiriman', shipments);
+    } catch (err) {
+      respond.error(res, 'FETCH_FAILED', err.message, 500);
+    }
+  }
+
+  async updateShipmentStatus(req, res) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      await db.query('UPDATE shipments SET status = ? WHERE id = ?', [status, id]);
+      respond.success(res, 'Status pengiriman berhasil diupdate');
+    } catch (err) {
+      respond.error(res, 'UPDATE_FAILED', err.message, 500);
+    }
+  }
+
+  async assignKurir(req, res) {
+    try {
+      const { id } = req.params;
+      const { kurir_id } = req.body;
+      await db.query('UPDATE shipments SET assigned_kurir_id = ? WHERE id = ?', [kurir_id, id]);
+      respond.success(res, 'Kurir berhasil di-assign');
+    } catch (err) {
+      respond.error(res, 'ASSIGN_FAILED', err.message, 500);
+    }
   }
 }
 
-module.exports = {
-  getAllShipments,
-  updateShipmentStatus
-};
+module.exports = new AdminController();

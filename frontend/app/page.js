@@ -70,23 +70,7 @@ export default function Home() {
                 <p className="text-body-md text-body mb-lg">Estimasi tiba 2-3 hari. Pilihan paling hemat untuk pengiriman harian Anda.</p>
               </div>
               <Link 
-                href="/tracking"
-                className="mt-auto inline-block bg-canvas text-ink text-center font-medium text-button-md rounded-pill px-md py-md hover:bg-surface-pressed transition-colors"
-              >
-                Gunakan Layanan
-              </Link>
-            </div>
-
-            <div className="bg-ink text-on-dark p-2xl rounded-xl flex flex-col shadow-lg">
-              <div className="flex-grow">
-                <div className="inline-block bg-canvas text-ink text-caption font-bold px-sm py-xxs rounded-pill mb-md">
-                  POPULER
-                </div>
-                <h3 className="text-display-md font-bold mb-sm">Sameday</h3>
-                <p className="text-body-md text-on-dark/80 mb-lg">Tiba di hari yang sama. Prioritas pengiriman tercepat untuk paket mendesak.</p>
-              </div>
-              <Link 
-                href="/tracking"
+                href="/customer/buat"
                 className="mt-auto inline-block bg-canvas text-ink text-center font-medium text-button-md rounded-pill px-md py-md hover:bg-surface-pressed transition-colors"
               >
                 Gunakan Layanan
@@ -95,11 +79,24 @@ export default function Home() {
 
             <div className="bg-canvas-soft p-2xl rounded-xl border border-surface-pressed flex flex-col">
               <div className="flex-grow">
-                <h3 className="text-display-md font-bold mb-sm">Kargo</h3>
-                <p className="text-body-md text-body mb-lg">Solusi hemat untuk pengiriman barang dalam jumlah besar atau muatan berat.</p>
+                <h3 className="text-display-md font-bold mb-sm">Sameday</h3>
+                <p className="text-body-md text-body mb-lg">Tiba di hari yang sama. Prioritas pengiriman tercepat untuk paket mendesak.</p>
               </div>
               <Link 
-                href="/tracking"
+                href="/customer/buat"
+                className="mt-auto inline-block bg-canvas text-ink text-center font-medium text-button-md rounded-pill px-md py-md hover:bg-surface-pressed transition-colors"
+              >
+                Gunakan Layanan
+              </Link>
+            </div>
+
+            <div className="bg-canvas-soft p-2xl rounded-xl border border-surface-pressed flex flex-col">
+              <div className="flex-grow">
+                <h3 className="text-display-md font-bold mb-sm">Nextday</h3>
+                <p className="text-body-md text-body mb-lg">Solusi hemat untuk pengiriman besok sampai. Jangkauan luas dengan biaya efisien.</p>
+              </div>
+              <Link 
+                href="/customer/buat"
                 className="mt-auto inline-block bg-canvas text-ink text-center font-medium text-button-md rounded-pill px-md py-md hover:bg-surface-pressed transition-colors"
               >
                 Gunakan Layanan

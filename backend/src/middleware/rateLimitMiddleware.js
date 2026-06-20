@@ -15,7 +15,7 @@ const COOLDOWN  = parseInt(process.env.COOLDOWN_SECONDS_MIN)   || 10;
  * Harus dipakai SETELAH authMiddleware (butuh req.user.user_id).
  */
 async function rateLimitMiddleware(req, res, next) {
-  const user_id = req.user?.user_id;
+  const user_id = req.user?.id || req.user?.user_id;
   if (!user_id) {
     // Seharusnya tidak terjadi jika dipasang setelah authMiddleware
     return respond.error(res, 'UNAUTHORIZED', 'User tidak teridentifikasi.', 401);

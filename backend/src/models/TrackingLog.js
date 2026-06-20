@@ -9,29 +9,25 @@ const { query } = require('../config/database');
 const TrackingLog = {
   /**
    * Menyisipkan entri tracking baru.
-   * @param {string} shipment_id - UUID shipment
-   * @param {string} status      - Status baru
-   * @param {string} keterangan  - Deskripsi singkat
    */
-  async insert(shipment_id, status, keterangan = '') {
+  async insert(shipment_id, status, keterangan = '', branch_id = null) {
     await query(
-      `INSERT INTO tracking_logs (shipment_id, status, keterangan)
-       VALUES (?, ?, ?)`,
-      [shipment_id, status, keterangan]
+      `INSERT INTO tracking_logs (shipment_id, status, keterangan, branch_id)
+       VALUES (?, ?, ?, ?)`,
+      [shipment_id, status, keterangan, branch_id]
     );
   },
 
   /**
    * Menyisipkan entri tracking berdasarkan order_id (subquery).
-   * Lebih efisien jika hanya punya order_id, bukan shipment_id.
    */
-  async insertByOrderId(order_id, status, keterangan = '') {
+  async insertByOrderId(order_id, status, keterangan = '', branch_id = null) {
     await query(
-      `INSERT INTO tracking_logs (shipment_id, status, keterangan)
-       SELECT id, ?, ?
+      `INSERT INTO tracking_logs (shipment_id, status, keterangan, branch_id)
+       SELECT id, ?, ?, ?
        FROM shipments
        WHERE order_id = ?`,
-      [status, keterangan, order_id]
+      [status, keterangan, branch_id, order_id]
     );
   },
 
@@ -41,10 +37,11 @@ const TrackingLog = {
    */
   async findByShipmentId(shipment_id) {
     const [rows] = await query(
-      `SELECT status, keterangan, created_at AS timestamp
-       FROM tracking_logs
-       WHERE shipment_id = ?
-       ORDER BY created_at ASC`,
+      `SELECT tl.status, tl.keterangan, tl.created_at AS timestamp, b.name as branch_name
+       FROM tracking_logs tl
+       LEFT JOIN branches b ON tl.branch_id = b.id
+       WHERE tl.shipment_id = ?
+       ORDER BY tl.created_at ASC`,
       [shipment_id]
     );
     return rows;
@@ -55,9 +52,10 @@ const TrackingLog = {
    */
   async findByOrderId(order_id) {
     const [rows] = await query(
-      `SELECT tl.status, tl.keterangan, tl.created_at AS timestamp
+      `SELECT tl.status, tl.keterangan, tl.created_at AS timestamp, b.name as branch_name
        FROM tracking_logs tl
        INNER JOIN shipments s ON tl.shipment_id = s.id
+       LEFT JOIN branches b ON tl.branch_id = b.id
        WHERE s.order_id = ?
        ORDER BY tl.created_at ASC`,
       [order_id]

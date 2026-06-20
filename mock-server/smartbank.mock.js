@@ -214,6 +214,7 @@ app.get('/smartbank/balance/:user_id', (req, res) => {
     transactions_today:   txToday,
     transactions_total:   txList.length,
     last_transaction:     txList.length ? txList[txList.length - 1].timestamp : null,
+    history:              txList,
   });
 });
 

@@ -7,11 +7,12 @@
 const INITIAL_STATE = {
   // Saldo setiap user (key: user_id, value: saldo Rupiah)
   balances: {
-    'USR-001': 50000,
-    'USR-002': 50000,
-    'USR-003': 50000,
-    'USR-004': 50000,
-    'USR-005': 50000,
+    'USR-001': 5000000,
+    'USR-002': 5000000,
+    'USR-003': 5000000,
+    'USR-004': 5000000,
+    'USR-005': 5000000,
+    'USR-006': 5000000,
   },
 
   // Akun layanan (penampung kredit dari transaksi)

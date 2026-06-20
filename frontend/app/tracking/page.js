@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import TrackingForm from "@/components/tracking/TrackingForm";
 import TrackingTimeline from "@/components/tracking/TrackingTimeline";
 import ShipmentSummary from "@/components/tracking/ShipmentSummary";
+import BranchRouteProgress from "@/components/tracking/BranchRouteProgress";
+import api from "@/lib/api";
 
 export default function TrackingPage() {
   const [loading, setLoading] = useState(false);
@@ -19,41 +21,16 @@ export default function TrackingPage() {
     }
 
     try {
-      // 1. Dapatkan token dummy (USR-001) untuk bisa mengakses API Tracking
-      // Dalam sistem riil, token berasal dari session login user.
-      const tokenRes = await fetch(`http://localhost:5500/trigger/generate-token?user_id=USR-001`);
-      const tokenData = await tokenRes.json();
-      const token = tokenData.token;
-
-      // 2. Akses API Tracking LogistiKita
-      const trackingRes = await fetch(`http://localhost:3001/logistikita/tracking_status?order_id=${orderId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const trackingRes = await api.get(`/tracking/${orderId}`);
+      const data = trackingRes.data.data;
       
-      const result = await trackingRes.json();
-
-      if (!result.success) {
-        setError(result.error?.message || "Pengiriman tidak ditemukan.");
-        setLoading(false);
-        return;
-      }
-
-      const data = result.data;
-      
-      // Map response ke format komponen UI
       const mappedData = {
         orderId: data.order_id,
+        origin: data.alamat_asal,
         destination: data.alamat_tujuan,
-        transactionValue: data.nilai_transaksi,
-        shippingCost: data.ongkir,
-        serviceFee: data.fee_layanan,
-        statusHistory: data.riwayat_status.map(riwayat => ({
-          status: riwayat.status,
-          description: riwayat.keterangan,
-          timestamp: riwayat.timestamp
-        }))
+        statusHistory: data.riwayat_status || [],
+        ruteCabang: data.rute_cabang || [],
+        tipePengiriman: data.tipe_pengiriman
       };
 
       setTrackingData(mappedData);
@@ -63,7 +40,7 @@ export default function TrackingPage() {
       }
     } catch (err) {
       console.error(err);
-      if (isInitial) setError("Gagal menghubungi server. Pastikan Backend dan Mock Server berjalan.");
+      if (isInitial) setError("Order ID tidak ditemukan atau terjadi kesalahan server.");
     } finally {
       if (isInitial) setLoading(false);
     }
@@ -81,13 +58,12 @@ export default function TrackingPage() {
     if (!activeOrderId) return;
     const interval = setInterval(() => {
       fetchTrackingData(activeOrderId, false);
-    }, 3000); // Poll setiap 3 detik
+    }, 3000);
     return () => clearInterval(interval);
   }, [activeOrderId, fetchTrackingData]);
 
   return (
     <div className="flex flex-col min-h-screen bg-canvas-soft">
-      {/* Hero Banner Area for Tracking Page */}
       <section className="bg-ink text-on-dark py-3xl px-3xl pb-[80px]">
         <div className="max-w-[1280px] mx-auto text-center">
           <h1 className="text-display-xl font-bold mb-md">Lacak Paket Anda</h1>
@@ -97,7 +73,6 @@ export default function TrackingPage() {
         </div>
       </section>
 
-      {/* Tracking Content */}
       <section className="flex-grow px-3xl pb-3xl">
         <div className="max-w-[1280px] mx-auto">
           <TrackingForm onTrack={handleTrack} />
@@ -111,20 +86,44 @@ export default function TrackingPage() {
             )}
 
             {error && (
-              <div className="bg-[#fde8e8] text-[#c81e1e] p-lg rounded-xl text-center font-medium">
+              <div className="bg-[#fde8e8] text-[#c81e1e] p-lg rounded-xl text-center font-medium shadow-sm">
                 {error}
               </div>
             )}
 
             {trackingData && !loading && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2xl">
-                <div className="md:col-span-2">
-                  <TrackingTimeline statusHistory={trackingData.statusHistory} />
+              <>
+                <BranchRouteProgress routeCabang={trackingData.ruteCabang} />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2xl">
+                  <div className="md:col-span-2">
+                    <TrackingTimeline statusHistory={trackingData.statusHistory} />
+                  </div>
+                  <div className="md:col-span-1">
+                    <div className="bg-canvas p-2xl rounded-xl border border-surface-pressed shadow-sm">
+                      <h3 className="text-display-sm font-bold mb-md">Info Pengiriman</h3>
+                      <div className="space-y-4 text-body-md text-body">
+                        <div>
+                          <p className="font-bold text-ink">Order ID</p>
+                          <p>{trackingData.orderId}</p>
+                        </div>
+                        <div>
+                          <p className="font-bold text-ink">Tipe Layanan</p>
+                          <p className="capitalize">{trackingData.tipePengiriman}</p>
+                        </div>
+                        <div className="h-px bg-surface-pressed my-2"></div>
+                        <div>
+                          <p className="font-bold text-ink">Asal</p>
+                          <p>{trackingData.origin}</p>
+                        </div>
+                        <div>
+                          <p className="font-bold text-ink">Tujuan</p>
+                          <p>{trackingData.destination}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="md:col-span-1">
-                  <ShipmentSummary data={trackingData} />
-                </div>
-              </div>
+              </>
             )}
           </div>
         </div>

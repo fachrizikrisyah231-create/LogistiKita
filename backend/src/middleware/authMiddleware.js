@@ -19,8 +19,8 @@ function authMiddleware(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // { user_id, email, iat, exp }
-    logger.debug(`[Auth] Token valid untuk user: ${decoded.user_id}`);
+    req.user = decoded; // { id, email, role, branch_id, iat, exp }
+    logger.debug(`[Auth] Token valid untuk user: ${decoded.id} (Role: ${decoded.role})`);
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {

@@ -43,7 +43,7 @@ app.get('/health', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────
 // ROUTES LOGISTIKITA
 // ─────────────────────────────────────────────────────────────────────
-app.use('/logistikita', logistikitaRoutes);
+app.use('/api', logistikitaRoutes);
 
 // ─────────────────────────────────────────────────────────────────────
 // 404 HANDLER — route tidak ditemukan

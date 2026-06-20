@@ -91,15 +91,15 @@ async function sendToLogistikita(body, sourceApp) {
 app.post('/trigger/marketplace', async (req, res) => {
   log('POST', '/trigger/marketplace', `order=${req.body?.order_id} user=${req.body?.user_id}`);
 
-  const { order_id, user_id, alamat_tujuan, jarak, nilai_transaksi } = req.body;
+  const { order_id, user_id, alamat_asal, lat_asal, lng_asal, alamat_tujuan, lat_tujuan, lng_tujuan, tipe_pengiriman, nilai_transaksi } = req.body;
 
   // Validasi minimal
-  if (!order_id || !user_id || !alamat_tujuan || !jarak || !nilai_transaksi) {
+  if (!order_id || !user_id || !alamat_asal || lat_asal === undefined || lng_asal === undefined || !alamat_tujuan || lat_tujuan === undefined || lng_tujuan === undefined || !tipe_pengiriman || !nilai_transaksi) {
     return res.status(400).json({
       success: false,
       error: {
         code:    'MISSING_FIELDS',
-        message: 'Field yang wajib: order_id, user_id, alamat_tujuan, jarak, nilai_transaksi.',
+        message: 'Field yang wajib: order_id, user_id, alamat_asal, lat_asal, lng_asal, alamat_tujuan, lat_tujuan, lng_tujuan, tipe_pengiriman, nilai_transaksi.',
       },
     });
   }
@@ -127,14 +127,14 @@ app.post('/trigger/marketplace', async (req, res) => {
 app.post('/trigger/supplierhub', async (req, res) => {
   log('POST', '/trigger/supplierhub', `order=${req.body?.order_id} user=${req.body?.user_id}`);
 
-  const { order_id, user_id, alamat_tujuan, jarak, nilai_transaksi } = req.body;
+  const { order_id, user_id, alamat_asal, lat_asal, lng_asal, alamat_tujuan, lat_tujuan, lng_tujuan, tipe_pengiriman, nilai_transaksi } = req.body;
 
-  if (!order_id || !user_id || !alamat_tujuan || !jarak || !nilai_transaksi) {
+  if (!order_id || !user_id || !alamat_asal || lat_asal === undefined || lng_asal === undefined || !alamat_tujuan || lat_tujuan === undefined || lng_tujuan === undefined || !tipe_pengiriman || !nilai_transaksi) {
     return res.status(400).json({
       success: false,
       error: {
         code:    'MISSING_FIELDS',
-        message: 'Field yang wajib: order_id, user_id, alamat_tujuan, jarak, nilai_transaksi.',
+        message: 'Field yang wajib: order_id, user_id, alamat_asal, lat_asal, lng_asal, alamat_tujuan, lat_tujuan, lng_tujuan, tipe_pengiriman, nilai_transaksi.',
       },
     });
   }

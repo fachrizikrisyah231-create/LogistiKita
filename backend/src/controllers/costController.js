@@ -1,42 +1,41 @@
 'use strict';
 
-const { hitungOngkir, hitungSemuaBiaya } = require('../services/costCalculatorService');
+const haversineService = require('../services/haversineService');
+const { hitungSemuaBiaya } = require('../services/costCalculatorService');
 const respond = require('../utils/responseHelper');
-const logger  = require('../utils/logger');
 
-/**
- * POST /logistikita/biaya_pengiriman
- *
- * Menghitung estimasi biaya pengiriman.
- * Dapat digunakan frontend untuk preview biaya sebelum checkout.
- * Bersifat informational — tidak memproses pembayaran.
- *
- * Middleware: authMiddleware
- */
-function hitungBiayaPengiriman(req, res) {
-  const { nilai_transaksi, jarak } = req.body;
+class CostController {
+  async estimasiBiaya(req, res) {
+    const { lat_asal, lng_asal, lat_tujuan, lng_tujuan, tipe_pengiriman } = req.body;
 
-  // ── Validasi ───────────────────────────────────────────────────
-  if (!nilai_transaksi || typeof nilai_transaksi !== 'number' || nilai_transaksi <= 0) {
-    return respond.error(res, 'VALIDATION_ERROR', "Field 'nilai_transaksi' harus berupa angka positif.", 400, { fields: ['nilai_transaksi'] });
+    if (lat_asal === undefined || lng_asal === undefined || lat_tujuan === undefined || lng_tujuan === undefined || !tipe_pengiriman) {
+      return respond.error(res, 'VALIDATION_ERROR', 'Koordinat asal, tujuan, dan tipe pengiriman wajib diisi.', 400);
+    }
+
+    try {
+      const jarakKm = haversineService.calculateDistance(lat_asal, lng_asal, lat_tujuan, lng_tujuan);
+      
+      const maxSameday = parseInt(process.env.SAMEDAY_MAX_KM) || 50;
+      const maxNextday = parseInt(process.env.NEXTDAY_MAX_KM) || 250;
+
+      if (tipe_pengiriman === 'sameday' && jarakKm > maxSameday) {
+        return respond.error(res, 'VALIDATION_ERROR', `Jarak terlalu jauh untuk Sameday (maks ${maxSameday} km). Jarak Anda: ${jarakKm} km.`, 400);
+      }
+      if (tipe_pengiriman === 'nextday' && jarakKm > maxNextday) {
+        return respond.error(res, 'VALIDATION_ERROR', `Jarak terlalu jauh untuk Nextday (maks ${maxNextday} km). Jarak Anda: ${jarakKm} km.`, 400);
+      }
+
+      const biaya = hitungSemuaBiaya(jarakKm, tipe_pengiriman);
+
+      respond.success(res, 'Estimasi biaya', {
+        jarak_km: jarakKm,
+        tipe_pengiriman,
+        ...biaya
+      });
+    } catch (err) {
+      respond.error(res, 'CALCULATION_FAILED', err.message, 500);
+    }
   }
-  if (!jarak || typeof jarak !== 'number' || jarak <= 0) {
-    return respond.error(res, 'VALIDATION_ERROR', "Field 'jarak' harus berupa angka positif (km).", 400, { fields: ['jarak'] });
-  }
-
-  logger.info(`[Controller] POST /biaya_pengiriman — nilai_transaksi=${nilai_transaksi}, jarak=${jarak}`);
-
-  const { ongkir, ongkir_raw, fee_layanan, total_biaya, catatan_ongkir } = hitungSemuaBiaya(nilai_transaksi);
-
-  return respond.success(res, {
-    nilai_transaksi,
-    jarak_km:             jarak,
-    ongkir_raw,
-    ongkir_final:         ongkir,
-    fee_layanan_estimasi: fee_layanan,
-    total_estimasi:       total_biaya,
-    catatan:              catatan_ongkir,
-  });
 }
 
-module.exports = { hitungBiayaPengiriman };
+module.exports = new CostController();
