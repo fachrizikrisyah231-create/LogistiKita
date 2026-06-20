@@ -3,8 +3,8 @@
 > **Dokumen:** Product Requirements Document (Backend)
 > **Proyek:** LogistiKita — Aplikasi Manajemen Pengiriman Barang
 > **Mata Kuliah:** Rekayasa Perangkat Lunak 2
-> **Stack Backend:** Node.js + Express.js | MySQL 8.x | JWT Auth
-> **Versi:** 1.0.0 | Tanggal: 2026-06-03
+> **Stack Backend:** Node.js + Express.js | MySQL 8.x | JWT Auth | bcrypt
+> **Versi:** 2.0.0 | Tanggal: 2026-06-17
 
 ---
 
@@ -18,34 +18,39 @@
 6. [API Contract Lengkap](#6-api-contract-lengkap)
 7. [Business Logic & Rules](#7-business-logic--rules)
 8. [Integrasi SmartBank via API Gateway](#8-integrasi-smartbank-via-api-gateway)
-9. [Database Schema & SQL Query](#9-database-schema--sql-query)
+9. [Database Schema & SQL](#9-database-schema--sql)
 10. [Error Handling & Response Standard](#10-error-handling--response-standard)
-11. [Rate Limiting & Validasi Keuangan](#11-rate-limiting--validasi-keuangan)
-12. [Alur Eksekusi Per Fitur (Flow Diagram)](#12-alur-eksekusi-per-fitur-flow-diagram)
-13. [Acceptance Criteria](#13-acceptance-criteria)
+11. [Alur Eksekusi Per Fitur](#11-alur-eksekusi-per-fitur)
+12. [Acceptance Criteria](#12-acceptance-criteria)
 
 ---
 
 ## 1. Overview & Tujuan
 
-**LogistiKita** adalah microservice backend yang bertanggung jawab atas manajemen pengiriman barang dalam ekosistem simulasi ekonomi UMKM. Backend ini berperan sebagai **cost driver** — menerima order dari service eksternal (Marketplace/SupplierHub), menghitung biaya pengiriman, mendelegasikan pembayaran ke SmartBank melalui API Gateway, dan menyediakan data tracking untuk user.
+**LogistiKita** backend adalah microservice yang bertanggung jawab atas:
+- **Autentikasi** — Login & register user (customer, kurir, admin)
+- **Manajemen pengiriman** — Dari user langsung (via UI) maupun dari Marketplace/SupplierHub (via API)
+- **Kalkulasi ongkir** — Berdasarkan jarak (Haversine) × tarif per km per tipe pengiriman
+- **Routing cabang** — Menentukan cabang transit otomatis berdasarkan geografi
+- **Tracking** — Status tracking publik (tanpa login) melalui rute cabang
+- **Dashboard kurir** — Endpoint untuk aksi kurir (pickup, transit, delivery)
+- **Dashboard admin** — Endpoint untuk overview, keuangan, manajemen data
 
 ### Batasan Scope Backend
 
 | Aspek | Ketentuan |
 |---|---|
-| **Pembayaran** | Tidak memproses pembayaran langsung; semua didelegasikan ke SmartBank via API Gateway |
-| **Saldo** | Tidak menyimpan atau memanipulasi saldo user secara langsung |
-| **Inisiasi Transaksi** | Hanya menerima trigger dari Marketplace atau SupplierHub |
-| **Komunikasi** | Semua request ke SmartBank wajib melalui API Gateway (JWT + logging) |
-| **User Management** | Tidak mengelola registrasi user; hanya menyimpan referensi `user_id` dari SmartBank |
+| **Pembayaran** | Didelegasikan ke SmartBank via API Gateway |
+| **Saldo** | Tidak menyimpan/memanipulasi saldo user |
+| **User Management** | Mengelola login/register/role sendiri (bukan dari SmartBank) |
+| **Tracking** | Endpoint tracking **publik** (tanpa JWT), bisa diakses siapa saja |
 
 ### Prinsip Desain
 
-- **Stateless API**: Setiap request membawa JWT token yang berisi identitas; backend tidak menyimpan session
-- **Single Responsibility**: Setiap controller & service menangani satu tanggung jawab
-- **Audit Trail**: Setiap percobaan transaksi (sukses/gagal) dicatat di `transaction_logs`
-- **Idempotency**: `order_id` bersifat unik; duplikat request ditolak dengan error `DUPLICATE_ORDER`
+- **Stateless API**: JWT token untuk identitas; tidak ada server-side session
+- **Role-based Access Control**: Middleware per role (customer, kurir, admin)
+- **Audit Trail**: Setiap transaksi dicatat di `transaction_logs`
+- **Idempotency**: `order_id` bersifat unik; duplikat ditolak
 
 ---
 
@@ -55,40 +60,46 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                    EXTERNAL TRIGGERS                            │
 │         Marketplace (PasarKita)   SupplierHub                   │
-└──────────────────────┬──────────────────────┘
-                       │ POST /logistikita/request_pengiriman
-                       ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     API GATEWAY                                 │
-│  - JWT Validation                                               │
-│  - Request Logging                                              │
-│  - Fee Gateway (0.5%)                                           │
-└──────────────────────┬──────────────────────┘
+│                    + User Langsung (via Frontend)                │
+└──────────────────────┬──────────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │              LOGISTIKITA BACKEND (Express.js)                   │
 │                                                                 │
-│  Routes → Controllers → Services → Models → MySQL              │
+│  Routes → Middleware → Controllers → Services → Models → MySQL  │
 │                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  POST /request_pengiriman  →  shipmentController         │  │
-│  │  POST /biaya_pengiriman    →  costController (internal)  │  │
-│  │  POST /pembayaran_logistik →  paymentController          │  │
-│  │  GET  /tracking_status     →  trackingController         │  │
-│  │  POST /biaya_layanan       →  feeController (internal)   │  │
-│  └──────────────────────────────────────────────────────────┘  │
+│  AUTH:                                                          │
+│  │  POST /api/auth/register      →  authController                 │
+│  │  POST /api/auth/login         →  authController                 │
+│  │  GET  /api/auth/me            →  authController                 │
 │                                                                 │
-│  Middleware: authMiddleware | rateLimitMiddleware | logger      │
-└──────────────────────┬──────────────────────┘
+│  PENGIRIMAN:                                                    │
+│  │  POST /pengiriman         →  userShipmentController         │
+│  │  GET  /pengiriman-saya    →  userShipmentController         │
+│  │  POST /request-pengiriman →  shipmentController             │
+│  │  POST /estimasi-ongkir    →  costController                 │
+│  │  GET  /tracking/:order_id →  trackingController (PUBLIC)    │
+│                                                                 │
+│  KURIR:                                                         │
+│  │  GET  /kurir/tugas        →  kurirController                │
+│  │  PUT  /kurir/pickup/:id   →  kurirController                │
+│  │  PUT  /kurir/tiba-cabang  →  kurirController                │
+│  │  PUT  /kurir/delivered    →  kurirController                │
+│  │  ...                                                        │
+│                                                                 │
+│  ADMIN:                                                         │
+│  │  GET  /admin/overview     →  adminController                │
+│  │  GET  /admin/keuangan     →  adminController                │
+│  │  GET  /admin/shipments    →  adminController                │
+│  │  ...                                                        │
+│                                                                 │
+│  Middleware: authMiddleware | roleMiddleware | rateLimitMiddleware│
+└──────────────────────┬──────────────────────────────────────────┘
                        │ POST /logistics/pay (via Gateway)
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    SMARTBANK (Core)                             │
-│  - Validasi saldo                                               │
-│  - Debit/Kredit                                                 │
-│  - Fee Bank (1%) + Pajak Sistem (2%)                            │
-│  - Ledger recording                                             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,44 +111,51 @@
 backend/
 ├── src/
 │   ├── controllers/
-│   │   ├── shipmentController.js       # POST /request_pengiriman
-│   │   ├── trackingController.js       # GET  /tracking_status
-│   │   ├── paymentController.js        # POST /pembayaran_logistik (internal)
-│   │   ├── costController.js           # POST /biaya_pengiriman (internal + mock)
-│   │   └── feeController.js            # POST /biaya_layanan_logistik (internal)
+│   │   ├── authController.js            # Login, register, me
+│   │   ├── shipmentController.js        # POST /request-pengiriman (dari app lain)
+│   │   ├── userShipmentController.js    # POST /pengiriman, GET /pengiriman-saya (user langsung)
+│   │   ├── trackingController.js        # GET /tracking/:order_id (publik)
+│   │   ├── costController.js            # POST /estimasi-ongkir
+│   │   ├── feeController.js             # Kalkulasi fee layanan (internal)
+│   │   ├── paymentController.js         # Pembayaran ke SmartBank (internal)
+│   │   ├── kurirController.js           # Semua endpoint kurir
+│   │   └── adminController.js           # Semua endpoint admin
 │   │
 │   ├── services/
-│   │   ├── shipmentService.js          # Orkestrasi alur utama pengiriman
-│   │   ├── costCalculatorService.js    # Logika kalkulasi ongkir & fee
-│   │   └── smartbankService.js         # HTTP client ke SmartBank via Gateway
+│   │   ├── authService.js               # Logika auth (bcrypt, JWT)
+│   │   ├── shipmentService.js           # Orkestrasi alur pengiriman
+│   │   ├── costCalculatorService.js     # Kalkulasi ongkir + fee
+│   │   ├── haversineService.js          # Hitung jarak Haversine
+│   │   ├── routingService.js            # Routing cabang otomatis
+│   │   └── smartbankService.js          # HTTP client ke SmartBank
 │   │
 │   ├── models/
-│   │   ├── Shipment.js                 # CRUD model tabel shipments
-│   │   ├── TrackingLog.js              # CRUD model tabel tracking_logs
-│   │   └── TransactionLog.js           # CRUD model tabel transaction_logs
+│   │   ├── User.js
+│   │   ├── Shipment.js
+│   │   ├── Branch.js
+│   │   ├── ShipmentRoute.js
+│   │   ├── TrackingLog.js
+│   │   └── TransactionLog.js
 │   │
 │   ├── middleware/
-│   │   ├── authMiddleware.js           # JWT validation & user extraction
-│   │   └── rateLimitMiddleware.js      # Cooldown (10–30s) + daily limit (10/hari)
+│   │   ├── authMiddleware.js            # JWT validation & user extraction
+│   │   ├── roleMiddleware.js            # Role-based access control
+│   │   └── rateLimitMiddleware.js       # Cooldown + daily limit
 │   │
 │   ├── routes/
-│   │   └── logistikitaRoutes.js        # Definisi semua route & middleware chain
+│   │   └── logistikitaRoutes.js         # Semua route & middleware chain
 │   │
 │   ├── config/
-│   │   └── database.js                 # MySQL connection pool
+│   │   └── database.js                  # MySQL connection pool
 │   │
 │   ├── utils/
-│   │   ├── responseHelper.js           # Standard response formatter
-│   │   └── logger.js                   # Winston/console logger
+│   │   ├── responseHelper.js
+│   │   └── logger.js
 │   │
-│   └── app.js                          # Express entry point & middleware setup
+│   └── app.js                           # Express entry point
 │
-├── mock-server/
-│   ├── smartbank.mock.js               # Mock SmartBank (development)
-│   └── gateway.mock.js                 # Mock API Gateway (development)
-│
-├── .env                                # Environment variables (jangan di-commit)
-├── .env.example                        # Template env untuk developer
+├── .env
+├── .env.example
 └── package.json
 ```
 
@@ -162,52 +180,40 @@ DB_CONNECTION_LIMIT=10
 
 # ─── Authentication ───────────────────────────────────────────
 JWT_SECRET=your_jwt_secret_key_min_32_chars
-JWT_EXPIRES_IN=1h
+JWT_EXPIRES_IN=24h
+BCRYPT_ROUNDS=10
 
 # ─── External Services ────────────────────────────────────────
 SMARTBANK_BASE_URL=http://localhost:4000
 GATEWAY_BASE_URL=http://localhost:5000
 GATEWAY_API_KEY=gateway_service_key
 
-# ─── Aturan Keuangan (sesuai ekosistem) ───────────────────────
-ONGKIR_PERCENTAGE=0.05          # 5% dari nilai transaksi
-ONGKIR_MINIMUM=5000             # Minimum Rp5.000
-FEE_LAYANAN_PERCENTAGE=0.05     # 5% dari ongkir
-FEE_GATEWAY_PERCENTAGE=0.005    # 0.5% (dipotong Gateway)
-FEE_BANK_PERCENTAGE=0.01        # 1% (dipotong SmartBank)
-TAX_PERCENTAGE=0.02             # 2% pajak sistem (money sink)
+# ─── Ongkir per km (per tipe pengiriman) ──────────────────────
+ONGKIR_REGULER_PER_KM=2000
+ONGKIR_NEXTDAY_PER_KM=3500
+ONGKIR_SAMEDAY_PER_KM=5000
+
+# ─── Batas jarak per tipe ─────────────────────────────────────
+SAMEDAY_MAX_KM=50
+NEXTDAY_MAX_KM=250
+
+# ─── Fee ──────────────────────────────────────────────────────
+FEE_LAYANAN_PERCENTAGE=0.05
 
 # ─── Rate Limiting ────────────────────────────────────────────
-COOLDOWN_SECONDS_MIN=10         # Jeda minimum antar transaksi
-COOLDOWN_SECONDS_MAX=30         # Jeda maksimum
-MAX_DAILY_TRANSACTIONS=10       # Maks transaksi per user per hari
+COOLDOWN_SECONDS_MIN=10
+COOLDOWN_SECONDS_MAX=30
+MAX_DAILY_TRANSACTIONS=10
 ```
 
 ---
 
 ## 5. Authentication & Middleware
 
-### 5.1 JWT Middleware (`authMiddleware.js`)
+### 5.1 Auth Middleware (`authMiddleware.js`)
 
-Setiap request ke endpoint LogistiKita **wajib** membawa JWT token yang valid di header `Authorization`.
+Memvalidasi JWT token dari header `Authorization`.
 
-**Header yang diperlukan:**
-```http
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
-```
-
-**Payload JWT yang diharapkan:**
-```json
-{
-  "user_id": "USR-001",
-  "email": "user@example.com",
-  "iat": 1717200000,
-  "exp": 1717203600
-}
-```
-
-**Pseudocode `authMiddleware.js`:**
 ```javascript
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -215,7 +221,7 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;   // { user_id, email }
+    req.user = decoded; // { user_id, email, role }
     next();
   } catch (err) {
     return res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN' } });
@@ -223,425 +229,122 @@ const authMiddleware = (req, res, next) => {
 };
 ```
 
-### 5.2 Rate Limit Middleware (`rateLimitMiddleware.js`)
+### 5.2 Role Middleware (`roleMiddleware.js`)
 
-Diterapkan pada endpoint `POST /request_pengiriman`.
+Membatasi akses berdasarkan role user.
+
+```javascript
+const roleMiddleware = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Anda tidak memiliki akses ke resource ini.' }
+      });
+    }
+    next();
+  };
+};
+
+// Penggunaan:
+// router.get('/kurir/tugas', authMiddleware, roleMiddleware('kurir'), kurirController.getTugas);
+// router.get('/admin/overview', authMiddleware, roleMiddleware('admin'), adminController.getOverview);
+```
+
+### 5.3 Rate Limit Middleware (`rateLimitMiddleware.js`)
+
+Diterapkan pada endpoint pembuatan pengiriman.
 
 | Rule | Value | Error Code |
 |---|---|---|
 | Cooldown antar transaksi | 10–30 detik | `COOLDOWN_ACTIVE` |
 | Maksimum transaksi/hari | 10 per user | `DAILY_LIMIT_EXCEEDED` |
 
-**Pseudocode:**
+### 5.4 Route Middleware Chain
+
 ```javascript
-const rateLimitMiddleware = async (req, res, next) => {
-  const { user_id } = req.user;
+// Auth endpoints (no middleware)
+router.post('/api/auth/register', authController.register);
+router.post('/api/auth/login', authController.login);
+router.get('/api/auth/me', authMiddleware, authController.me);
 
-  // Cek daily limit
-  const countToday = await Shipment.countTodayByUser(user_id);
-  if (countToday >= MAX_DAILY_TRANSACTIONS) {
-    return res.status(429).json({ success: false, error: { code: 'DAILY_LIMIT_EXCEEDED' } });
-  }
+// Public endpoints
+router.get('/api/tracking/:order_id', trackingController.getTracking);
+router.post('/api/estimasi-ongkir', costController.estimasi);
+router.get('/api/cabang/list', branchController.list);
 
-  // Cek cooldown
-  const lastTx = await Shipment.getLastTransactionTime(user_id);
-  const diffSeconds = (Date.now() - new Date(lastTx).getTime()) / 1000;
-  if (diffSeconds < COOLDOWN_SECONDS_MIN) {
-    return res.status(429).json({
-      success: false,
-      error: { code: 'COOLDOWN_ACTIVE', retry_after: Math.ceil(COOLDOWN_SECONDS_MIN - diffSeconds) }
-    });
-  }
+// Customer endpoints
+router.post('/api/pengiriman', authMiddleware, roleMiddleware('customer'), rateLimitMiddleware, userShipmentController.create);
+router.get('/api/pengiriman-saya', authMiddleware, roleMiddleware('customer'), userShipmentController.list);
 
-  next();
-};
+// API trigger (from Marketplace/SupplierHub)
+router.post('/api/request-pengiriman', authMiddleware, rateLimitMiddleware, shipmentController.create);
+
+// Kurir endpoints
+router.get('/api/kurir/tugas', authMiddleware, roleMiddleware('kurir'), kurirController.getTugas);
+router.get('/api/kurir/riwayat', authMiddleware, roleMiddleware('kurir'), kurirController.getRiwayat);
+router.put('/api/kurir/pickup/:shipment_id', authMiddleware, roleMiddleware('kurir'), kurirController.pickup);
+router.put('/api/kurir/tiba-cabang/:shipment_id', authMiddleware, roleMiddleware('kurir'), kurirController.tibaCabang);
+router.put('/api/kurir/lanjut-transit/:shipment_id', authMiddleware, roleMiddleware('kurir'), kurirController.lanjutTransit);
+router.put('/api/kurir/antar/:shipment_id', authMiddleware, roleMiddleware('kurir'), kurirController.antar);
+router.put('/api/kurir/delivered/:shipment_id', authMiddleware, roleMiddleware('kurir'), kurirController.delivered);
+router.put('/api/kurir/gagal/:shipment_id', authMiddleware, roleMiddleware('kurir'), kurirController.gagal);
+
+// Admin endpoints
+router.get('/api/admin/overview', authMiddleware, roleMiddleware('admin'), adminController.getOverview);
+router.get('/api/admin/keuangan', authMiddleware, roleMiddleware('admin'), adminController.getKeuangan);
+router.get('/api/admin/shipments', authMiddleware, roleMiddleware('admin'), adminController.getShipments);
+router.put('/api/admin/shipments/:id/status', authMiddleware, roleMiddleware('admin'), adminController.updateStatus);
+router.put('/api/admin/shipments/:id/assign-kurir', authMiddleware, roleMiddleware('admin'), adminController.assignKurir);
+router.get('/api/admin/users', authMiddleware, roleMiddleware('admin'), adminController.getUsers);
+router.post('/api/admin/users', authMiddleware, roleMiddleware('admin'), adminController.createUser);
+router.put('/api/admin/users/:id', authMiddleware, roleMiddleware('admin'), adminController.updateUser);
+router.get('/api/admin/cabang', authMiddleware, roleMiddleware('admin'), adminController.getCabang);
+router.post('/api/admin/cabang', authMiddleware, roleMiddleware('admin'), adminController.createCabang);
+router.put('/api/admin/cabang/:id', authMiddleware, roleMiddleware('admin'), adminController.updateCabang);
+router.get('/api/admin/kurir', authMiddleware, roleMiddleware('admin'), adminController.getKurirList);
 ```
 
 ---
 
 ## 6. API Contract Lengkap
 
-> **Base URL (development):** `http://localhost:3001`
-> **Prefix:** `/logistikita`
-> **Header wajib di semua request:**
-> ```
-> Authorization: Bearer <JWT_TOKEN>
-> Content-Type: application/json
-> ```
-
----
-
-### 6.1 `POST /logistikita/request_pengiriman`
-
-**Deskripsi:** Endpoint utama. Menerima permintaan pengiriman dari Marketplace/SupplierHub. Secara otomatis mengeksekusi kalkulasi biaya, kalkulasi fee, dan pembayaran ke SmartBank dalam satu alur atomik.
-
-**Trigger:** Dipanggil otomatis oleh sistem eksternal (Marketplace/SupplierHub), **bukan** oleh user langsung.
-
-**Middleware:** `authMiddleware` → `rateLimitMiddleware`
-
-#### Request
-
-```http
-POST /logistikita/request_pengiriman
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
-```
-
-```json
-{
-  "order_id": "ORD-20240601-0001",
-  "user_id": "USR-001",
-  "alamat_tujuan": "Jl. Merdeka No. 10, Bandung, Jawa Barat",
-  "jarak": 12.5,
-  "nilai_transaksi": 150000,
-  "source_app": "marketplace"
-}
-```
-
-**Field Specification:**
-
-| Field | Tipe | Wajib | Validasi | Keterangan |
-|---|---|---|---|---|
-| `order_id` | `string` | ✅ | Tidak boleh duplikat, max 100 char | ID order dari aplikasi pemicu |
-| `user_id` | `string` | ✅ | Harus ada di tabel users | ID pembeli / pemilik order |
-| `alamat_tujuan` | `string` | ✅ | Tidak boleh kosong | Alamat tujuan pengiriman |
-| `jarak` | `float` | ✅ | > 0 | Jarak dalam km (dikirim aplikasi pemicu) |
-| `nilai_transaksi` | `integer` | ✅ | > 0 | Nilai transaksi produk (basis ongkir) |
-| `source_app` | `enum` | ✅ | `"marketplace"` atau `"supplierhub"` | Aplikasi asal trigger |
-
-#### Response — Sukses (201 Created)
-
-```json
-{
-  "success": true,
-  "data": {
-    "shipment_id": "SHIP-20240601-0001",
-    "order_id": "ORD-20240601-0001",
-    "status": "PROCESSING",
-    "ongkir": 7500,
-    "fee_layanan": 375,
-    "total_biaya": 7875,
-    "transaction_id": "TRX-SBANK-9981",
-    "message": "Pengiriman berhasil diproses dan pembayaran telah dilakukan."
-  }
-}
-```
-
-#### Response — Gagal: Duplikat Order (400)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "DUPLICATE_ORDER",
-    "message": "order_id ORD-20240601-0001 sudah terdaftar."
-  }
-}
-```
-
-#### Response — Gagal: Input Tidak Valid (400)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Field 'nilai_transaksi' harus berupa integer positif.",
-    "fields": ["nilai_transaksi"]
-  }
-}
-```
-
-#### Response — Gagal: Pembayaran Ditolak SmartBank (402)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "PAYMENT_FAILED",
-    "message": "Pembayaran ongkir gagal. Saldo user tidak mencukupi.",
-    "smartbank_error": "INSUFFICIENT_BALANCE",
-    "shipment_id": "SHIP-20240601-0001",
-    "shipment_status": "FAILED"
-  }
-}
-```
-
-#### Response — Gagal: Rate Limit (429)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "DAILY_LIMIT_EXCEEDED",
-    "message": "User USR-001 telah mencapai batas maksimum 10 transaksi hari ini."
-  }
-}
-```
-
----
-
-### 6.2 `POST /logistikita/biaya_pengiriman`
-
-**Deskripsi:** Menghitung estimasi biaya pengiriman berdasarkan nilai transaksi. Digunakan secara internal dalam alur `request_pengiriman`. Dapat dipanggil langsung oleh frontend untuk menampilkan estimasi sebelum checkout (informational only — tidak memproses pembayaran).
-
-**Middleware:** `authMiddleware`
-
-#### Request
-
-```http
-POST /logistikita/biaya_pengiriman
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
-```
-
-```json
-{
-  "nilai_transaksi": 150000,
-  "jarak": 12.5
-}
-```
-
-**Field Specification:**
-
-| Field | Tipe | Wajib | Validasi |
-|---|---|---|---|
-| `nilai_transaksi` | `integer` | ✅ | > 0 |
-| `jarak` | `float` | ✅ | > 0 |
-
-#### Response — Sukses (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "nilai_transaksi": 150000,
-    "jarak_km": 12.5,
-    "ongkir_raw": 7500,
-    "ongkir_final": 7500,
-    "fee_layanan_estimasi": 375,
-    "total_estimasi": 7875,
-    "catatan": "5% dari nilai transaksi (Rp150.000 × 5% = Rp7.500). Melebihi minimum Rp5.000, maka digunakan nilai 5%."
-  }
-}
-```
-
-> **Catatan Penting:** `ongkir_final = MAX(nilai_transaksi × 5%, 5000)`. Jika `nilai_transaksi` sangat kecil sehingga 5%-nya di bawah Rp5.000, maka ongkir dibulatkan ke Rp5.000.
-
----
-
-### 6.3 `POST /logistikita/pembayaran_logistik`
-
-**Deskripsi:** Mengirimkan payment request ke SmartBank melalui API Gateway. Dipanggil secara otomatis oleh `shipmentService` setelah kalkulasi biaya selesai. Endpoint ini juga tersedia sebagai endpoint publik internal untuk keperluan testing/debug.
-
-**Middleware:** `authMiddleware`
-
-#### Request (Internal Call)
-
-```http
-POST /logistikita/pembayaran_logistik
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
-```
-
-```json
-{
-  "shipment_id": "SHIP-20240601-0001",
-  "order_id": "ORD-20240601-0001",
-  "user_id": "USR-001",
-  "ongkir": 7500,
-  "fee_layanan": 375,
-  "total_biaya": 7875
-}
-```
-
-**Field Specification:**
-
-| Field | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| `shipment_id` | `string` | ✅ | UUID shipment yang sudah dibuat |
-| `order_id` | `string` | ✅ | Referensi ke order asal |
-| `user_id` | `string` | ✅ | ID payer (pembeli) |
-| `ongkir` | `integer` | ✅ | Hasil kalkulasi ongkir |
-| `fee_layanan` | `integer` | ✅ | Hasil kalkulasi fee layanan |
-| `total_biaya` | `integer` | ✅ | `ongkir + fee_layanan` |
-
-#### Response — Sukses (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "payment_status": "SUCCESS",
-    "transaction_id": "TRX-SBANK-9981",
-    "shipment_status": "PROCESSING",
-    "deducted_amounts": {
-      "pokok": 7875,
-      "fee_bank": 79,
-      "pajak_sistem": 157,
-      "fee_gateway": 39,
-      "total_debit_user": 8150
-    },
-    "message": "Pembayaran ongkir berhasil diproses oleh SmartBank."
-  }
-}
-```
-
-#### Response — Gagal Pembayaran (402)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "PAYMENT_FAILED",
-    "message": "SmartBank menolak pembayaran.",
-    "smartbank_error": "INSUFFICIENT_BALANCE"
-  }
-}
-```
-
----
-
-### 6.4 `GET /logistikita/tracking_status`
-
-**Deskripsi:** Mengambil status terkini dan riwayat status pengiriman. **Satu-satunya endpoint yang secara aktif diakses user** melalui halaman tracking di frontend.
-
-**Trigger:** Pull-based — user membuka halaman tracking atau klik refresh.
-
-**Middleware:** `authMiddleware`
-
-#### Request
-
-```http
-GET /logistikita/tracking_status?order_id=ORD-20240601-0001
-Authorization: Bearer <JWT_TOKEN>
-```
-
-**Query Parameters:**
-
-| Parameter | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| `order_id` | `string` | ✅ | ID order yang ingin dicek |
-
-> **Validasi Kepemilikan:** Backend akan memverifikasi bahwa `user_id` dari JWT token sama dengan `user_id` pemilik shipment tersebut. Jika berbeda, response 403 Forbidden.
-
-#### Response — Sukses (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "shipment_id": "SHIP-20240601-0001",
-    "order_id": "ORD-20240601-0001",
-    "status_terkini": "SHIPPED",
-    "alamat_tujuan": "Jl. Merdeka No. 10, Bandung, Jawa Barat",
-    "ongkir": 7500,
-    "fee_layanan": 375,
-    "total_biaya": 7875,
-    "estimasi_tiba": "2024-06-02",
-    "riwayat_status": [
-      {
-        "status": "PENDING",
-        "timestamp": "2024-06-01T09:00:00Z",
-        "keterangan": "Permintaan pengiriman diterima"
-      },
-      {
-        "status": "PROCESSING",
-        "timestamp": "2024-06-01T09:01:05Z",
-        "keterangan": "Pembayaran ongkir berhasil, menunggu kurir"
-      },
-      {
-        "status": "SHIPPED",
-        "timestamp": "2024-06-01T11:30:00Z",
-        "keterangan": "Barang telah diambil kurir"
-      }
-    ]
-  }
-}
-```
-
-#### Response — Tidak Ditemukan (404)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "SHIPMENT_NOT_FOUND",
-    "message": "Tidak ditemukan pengiriman untuk order_id ORD-20240601-0001."
-  }
-}
-```
-
-#### Response — Akses Ditolak (403)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "FORBIDDEN",
-    "message": "Anda tidak berhak mengakses data pengiriman ini."
-  }
-}
-```
-
----
-
-### 6.5 `POST /logistikita/biaya_layanan_logistik`
-
-**Deskripsi:** Menghitung fee layanan LogistiKita dari nilai ongkir. Dipanggil secara otomatis oleh `shipmentService`. Tersedia sebagai endpoint untuk keperluan simulasi/debug.
-
-**Middleware:** `authMiddleware`
-
-#### Request (Internal Call)
-
-```http
-POST /logistikita/biaya_layanan_logistik
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
-```
-
-```json
-{
-  "order_id": "ORD-20240601-0001",
-  "ongkir": 7500
-}
-```
-
-#### Response — Sukses (200 OK)
-
-```json
-{
-  "success": true,
-  "data": {
-    "fee_layanan": 375,
-    "basis_ongkir": 7500,
-    "persentase": "5%",
-    "catatan": "Fee layanan LogistiKita sebesar 5% dari ongkir (Rp7.500 × 5% = Rp375)"
-  }
-}
-```
-
----
-
-### 6.6 Referensi HTTP Status Code
-
-| HTTP Code | Kode Error | Kondisi |
-|---|---|---|
-| `200 OK` | — | Request berhasil (GET/POST informational) |
-| `201 Created` | — | Shipment berhasil dibuat |
-| `400 Bad Request` | `VALIDATION_ERROR` | Input tidak valid |
-| `400 Bad Request` | `DUPLICATE_ORDER` | `order_id` sudah terdaftar |
-| `400 Bad Request` | `USER_NOT_FOUND` | `user_id` tidak dikenal SmartBank |
-| `401 Unauthorized` | `MISSING_TOKEN` | Header Authorization tidak ada |
-| `401 Unauthorized` | `INVALID_TOKEN` | JWT expired atau tidak valid |
-| `402 Payment Required` | `PAYMENT_FAILED` | SmartBank menolak pembayaran |
-| `402 Payment Required` | `INSUFFICIENT_BALANCE` | Saldo user tidak cukup |
-| `403 Forbidden` | `FORBIDDEN` | User tidak berhak akses resource ini |
-| `404 Not Found` | `SHIPMENT_NOT_FOUND` | Data pengiriman tidak ditemukan |
-| `429 Too Many Requests` | `DAILY_LIMIT_EXCEEDED` | Melebihi 10 transaksi/hari |
-| `429 Too Many Requests` | `COOLDOWN_ACTIVE` | Transaksi terlalu cepat |
-| `500 Internal Server Error` | `INTERNAL_ERROR` | Error tidak terduga di server |
-| `503 Service Unavailable` | `SMARTBANK_DOWN` | SmartBank tidak dapat dihubungi |
+> **Base URL:** `http://localhost:3001`
+> Lihat [README.md §9](./README.md#9-api-endpoint-contract) untuk contract detail dengan request/response body.
+
+### Ringkasan Endpoint
+
+| # | Method | Endpoint | Auth | Role | Deskripsi |
+|---|---|---|---|---|---|
+| 1 | POST | `/api/auth/register` | ❌ | — | Register customer |
+| 2 | POST | `/api/auth/login` | ❌ | — | Login |
+| 3 | GET | `/api/auth/me` | JWT | any | Info user login |
+| 4 | POST | `/api/pengiriman` | JWT | customer | Buat pengiriman (user) |
+| 5 | GET | `/api/pengiriman-saya` | JWT | customer | List pengiriman user |
+| 6 | POST | `/api/request-pengiriman` | JWT | — | Request dari app lain |
+| 7 | POST | `/api/estimasi-ongkir` | ❌ | — | Estimasi ongkir |
+| 8 | GET | `/api/tracking/:order_id` | ❌ | — | Tracking publik |
+| 9 | GET | `/api/cabang/list` | ❌ | — | List cabang |
+| 10 | GET | `/api/kurir/tugas` | JWT | kurir | Tugas aktif |
+| 11 | GET | `/api/kurir/riwayat` | JWT | kurir | Riwayat selesai |
+| 12 | PUT | `/api/kurir/pickup/:id` | JWT | kurir | Pickup |
+| 13 | PUT | `/api/kurir/tiba-cabang/:id` | JWT | kurir | Tiba di cabang |
+| 14 | PUT | `/api/kurir/lanjut-transit/:id` | JWT | kurir | Lanjut transit |
+| 15 | PUT | `/api/kurir/antar/:id` | JWT | kurir | Antar ke penerima |
+| 16 | PUT | `/api/kurir/delivered/:id` | JWT | kurir | Tandai diterima |
+| 17 | PUT | `/api/kurir/gagal/:id` | JWT | kurir | Lapor gagal |
+| 18 | GET | `/api/admin/overview` | JWT | admin | Overview data |
+| 19 | GET | `/api/admin/keuangan` | JWT | admin | Keuangan & revenue |
+| 20 | GET | `/api/admin/shipments` | JWT | admin | Semua pengiriman |
+| 21 | PUT | `/api/admin/shipments/:id/status` | JWT | admin | Ubah status |
+| 22 | PUT | `/api/admin/shipments/:id/assign-kurir` | JWT | admin | Assign kurir |
+| 23 | GET | `/api/admin/users` | JWT | admin | Semua user |
+| 24 | POST | `/api/admin/users` | JWT | admin | Tambah user |
+| 25 | PUT | `/api/admin/users/:id` | JWT | admin | Edit user |
+| 26 | GET | `/api/admin/cabang` | JWT | admin | Semua cabang |
+| 27 | POST | `/api/admin/cabang` | JWT | admin | Tambah cabang |
+| 28 | PUT | `/api/admin/cabang/:id` | JWT | admin | Edit cabang |
+| 29 | GET | `/api/admin/kurir` | JWT | admin | Kurir + performa |
 
 ---
 
@@ -651,37 +354,38 @@ Content-Type: application/json
 
 **Formula:**
 ```
-ongkir = MAX(nilai_transaksi × 5%, 5000)
+ongkir = jarak_km × tarif_per_km[tipe_pengiriman]
 ```
 
-**Implementasi JavaScript:**
+**Implementasi:**
 ```javascript
-function hitungOngkir(nilaiTransaksi) {
-  const ONGKIR_PERCENTAGE = parseFloat(process.env.ONGKIR_PERCENTAGE) || 0.05;
-  const ONGKIR_MINIMUM    = parseInt(process.env.ONGKIR_MINIMUM) || 5000;
-  const ongkirRaw = Math.floor(nilaiTransaksi * ONGKIR_PERCENTAGE);
-  return Math.max(ongkirRaw, ONGKIR_MINIMUM);
+function hitungOngkir(jarakKm, tipePengiriman) {
+  const TARIF = {
+    reguler: parseInt(process.env.ONGKIR_REGULER_PER_KM) || 2000,
+    nextday: parseInt(process.env.ONGKIR_NEXTDAY_PER_KM) || 3500,
+    sameday: parseInt(process.env.ONGKIR_SAMEDAY_PER_KM) || 5000,
+  };
+  return Math.floor(jarakKm * TARIF[tipePengiriman]);
 }
 ```
 
-**Tabel Contoh:**
+### 7.2 Validasi Batas Jarak
 
-| Nilai Transaksi | 5% dari Transaksi | Ongkir Final | Aturan |
-|---|---|---|---|
-| Rp10.000 | Rp500 | **Rp5.000** | 5% < Rp5.000 → flat minimum |
-| Rp80.000 | Rp4.000 | **Rp5.000** | 5% < Rp5.000 → flat minimum |
-| Rp100.000 | Rp5.000 | **Rp5.000** | 5% = Rp5.000 → sama persis |
-| Rp150.000 | Rp7.500 | **Rp7.500** | 5% > Rp5.000 → pakai 5% |
-| Rp500.000 | Rp25.000 | **Rp25.000** | 5% > Rp5.000 → pakai 5% |
-
-### 7.2 Kalkulasi Fee Layanan
-
-**Formula:**
-```
-fee_layanan = FLOOR(ongkir × 5%)
+```javascript
+function validasiBatasJarak(jarakKm, tipePengiriman) {
+  const BATAS = {
+    sameday: parseInt(process.env.SAMEDAY_MAX_KM) || 50,
+    nextday: parseInt(process.env.NEXTDAY_MAX_KM) || 250,
+    reguler: Infinity,
+  };
+  if (jarakKm > BATAS[tipePengiriman]) {
+    throw new Error(`Jarak ${jarakKm} km melebihi batas ${tipePengiriman} (maks ${BATAS[tipePengiriman]} km)`);
+  }
+}
 ```
 
-**Implementasi JavaScript:**
+### 7.3 Kalkulasi Fee Layanan
+
 ```javascript
 function hitungFeeLayanan(ongkir) {
   const FEE_PERCENTAGE = parseFloat(process.env.FEE_LAYANAN_PERCENTAGE) || 0.05;
@@ -689,821 +393,397 @@ function hitungFeeLayanan(ongkir) {
 }
 ```
 
-### 7.3 Kalkulasi Total Biaya
+### 7.4 Haversine Distance (`haversineService.js`)
 
+```javascript
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Radius bumi (km)
+  const toRad = (deg) => deg * (Math.PI / 180);
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLng/2)**2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return Math.round(R * c * 10) / 10; // 1 desimal
+}
 ```
-total_biaya = ongkir + fee_layanan
+
+### 7.5 Routing Cabang (`routingService.js`)
+
+```javascript
+async function hitungRute(latAsal, lngAsal, latTujuan, lngTujuan) {
+  const branches = await Branch.getAllActive(); // sorted by route_order
+
+  // 1. Cari cabang terdekat ke asal
+  const cabangAsal = findNearestBranch(branches, latAsal, lngAsal);
+
+  // 2. Cari cabang terdekat ke tujuan
+  const cabangTujuan = findNearestBranch(branches, latTujuan, lngTujuan);
+
+  // 3. Buat rute
+  if (cabangAsal.route_order === cabangTujuan.route_order) {
+    return [cabangAsal]; // Tidak ada transit
+  }
+
+  const start = Math.min(cabangAsal.route_order, cabangTujuan.route_order);
+  const end = Math.max(cabangAsal.route_order, cabangTujuan.route_order);
+
+  let rute = branches.filter(b => b.route_order >= start && b.route_order <= end);
+
+  // Jika asal > tujuan (timur ke barat), balik urutan
+  if (cabangAsal.route_order > cabangTujuan.route_order) {
+    rute = rute.reverse();
+  }
+
+  return rute;
+}
+
+function findNearestBranch(branches, lat, lng) {
+  let nearest = null;
+  let minDist = Infinity;
+  for (const b of branches) {
+    const dist = haversine(lat, lng, b.latitude, b.longitude);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = b;
+    }
+  }
+  return nearest;
+}
 ```
 
-**Contoh pada transaksi Rp150.000:**
+### 7.6 Auth Service (`authService.js`)
+
+```javascript
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+async function register(name, email, password) {
+  const hash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS) || 10);
+  const user = await User.create({ name, email, password: hash, role: 'customer' });
+  const token = generateToken(user);
+  return { token, user };
+}
+
+async function login(email, password) {
+  const user = await User.findByEmail(email);
+  if (!user) throw new Error('Email atau password salah.');
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) throw new Error('Email atau password salah.');
+  const token = generateToken(user);
+  return { token, user };
+}
+
+function generateToken(user) {
+  return jwt.sign(
+    { user_id: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+  );
+}
 ```
-nilai_transaksi : Rp150.000
-ongkir          : MAX(150.000 × 5%, 5.000) = MAX(7.500, 5.000) = Rp7.500
-fee_layanan     : 7.500 × 5% = Rp375
-total_biaya     : Rp7.500 + Rp375 = Rp7.875
-```
-
-### 7.4 Peran `jarak` dalam Sistem
-
-`jarak` (dalam km) **tidak** digunakan dalam formula kalkulasi ongkir saat ini. Perannya:
-
-1. **Data informatif** — dicatat di `shipments` untuk dokumentasi & audit
-2. **Validasi sanity** — harus > 0 agar pengiriman valid
-3. **Masa depan** — dapat digunakan untuk tarif bertingkat per km di iterasi berikutnya
 
 ---
 
 ## 8. Integrasi SmartBank via API Gateway
 
-### 8.1 Alur Pembayaran
+*(Sama seperti di README.md §10 — lihat dokumen tersebut untuk detail payload, response, dan error handling.)*
+
+### Ringkasan Alur
 
 ```
-LogistiKita Backend
-       │
-       │ POST /logistics/pay
-       ▼
-  API Gateway
-  ├── Validasi JWT
-  ├── Logging request
-  └── Potong Fee Gateway (0.5% dari total_biaya)
-       │
-       │ Forward ke SmartBank
-       ▼
-  SmartBank
-  ├── Validasi saldo user >= total_debit
-  ├── Debit saldo user
-  │     - Pokok           : total_biaya
-  │     - Fee Bank (1%)   : FLOOR(total_biaya × 1%)
-  │     - Pajak Sistem (2%): FLOOR(total_biaya × 2%)
-  ├── Kredit akun LogistiKita : total_biaya
-  ├── Fee Bank → Reserve SmartBank
-  └── Pajak Sistem → Money Sink (dihapus dari sirkulasi)
-       │
-       ▼
-  Response → Gateway → LogistiKita
+LogistiKita → POST /logistics/pay → API Gateway (fee 0.5%) → SmartBank (fee bank 1% + pajak 2%)
 ```
 
-### 8.2 Payload ke SmartBank
+### Contoh: Pengiriman Reguler 12.5 km
 
-```json
-POST /payment  (SmartBank endpoint, via Gateway)
-{
-  "from_app": "logistikita",
-  "from_user": "USR-001",
-  "to_service": "logistikita",
-  "amount": 7875,
-  "metadata": {
-    "order_id": "ORD-20240601-0001",
-    "shipment_id": "SHIP-20240601-0001",
-    "type": "ongkir",
-    "breakdown": {
-      "ongkir": 7500,
-      "fee_layanan_logistik": 375
-    }
-  }
-}
+```
+ongkir        : 12.5 × 2000 = Rp25.000
+fee_layanan   : 25.000 × 5% = Rp1.250
+total_biaya   : Rp26.250
+
+→ Gateway fee  : Rp131
+→ Bank fee     : Rp262
+→ Pajak        : Rp525
+→ Total debit  : Rp27.168
 ```
 
-### 8.3 Response dari SmartBank
+---
 
-**Sukses:**
-```json
-{
-  "status": "SUCCESS",
-  "transaction_id": "TRX-SBANK-9981",
-  "timestamp": "2024-06-01T09:01:05Z",
-  "deducted_amounts": {
-    "pokok": 7875,
-    "fee_bank": 79,
-    "pajak_sistem": 157,
-    "fee_gateway": 39,
-    "total_debit": 8150
-  },
-  "new_balance": 41850
-}
-```
+## 9. Database Schema & SQL
 
-**Gagal:**
-```json
-{
-  "status": "FAILED",
-  "error_code": "INSUFFICIENT_BALANCE",
-  "message": "User balance is below required amount.",
-  "required": 8150,
-  "available": 3000
-}
-```
+*(Lihat README.md §11 untuk DDL lengkap.)*
 
-### 8.4 Error Handling SmartBank
+### Ringkasan Tabel
 
-| Error Code | Kondisi | Tindakan LogistiKita |
+| Tabel | Deskripsi | Kolom Kunci |
 |---|---|---|
-| `INSUFFICIENT_BALANCE` | Saldo user kurang | Shipment → FAILED, return 402 ke pemicu |
-| `USER_NOT_FOUND` | user_id tidak dikenal | Shipment → FAILED, return 400 ke pemicu |
-| `DAILY_LIMIT_EXCEEDED` | Melebihi 10 tx/hari | Shipment → FAILED, return 429 ke pemicu |
-| `COOLDOWN_ACTIVE` | Transaksi terlalu cepat | Retry setelah cooldown, atau return 429 |
-| `SYSTEM_ERROR` | SmartBank down | Shipment tetap PENDING, log error, return 503 |
+| `users` | Semua user (customer, kurir, admin) | id, email, password, role, branch_id |
+| `branches` | Cabang logistik (checkpoint tracking) | id, name, city, lat, lng, route_order |
+| `shipments` | Data pengiriman | id, order_id, user_id, tipe_pengiriman, alamat, koordinat, jarak, biaya, status, kurir, cabang |
+| `shipment_routes` | Rute cabang per pengiriman | shipment_id, branch_id, sequence, arrived_at, departed_at |
+| `tracking_logs` | Riwayat perubahan status | shipment_id, status, keterangan, branch_id |
+| `transaction_logs` | Audit trail pembayaran | shipment_id, amount, payment_status, smartbank_response |
 
-### 8.5 Implementasi `smartbankService.js`
-
-```javascript
-const axios = require('axios');
-
-async function processPayment({ shipmentId, orderId, userId, ongkir, feeLay, totalBiaya }) {
-  const payload = {
-    from_app: 'logistikita',
-    from_user: userId,
-    to_service: 'logistikita',
-    amount: totalBiaya,
-    metadata: {
-      order_id: orderId,
-      shipment_id: shipmentId,
-      type: 'ongkir',
-      breakdown: { ongkir, fee_layanan_logistik: feeLay }
-    }
-  };
-
-  const response = await axios.post(
-    `${process.env.GATEWAY_BASE_URL}/logistics/pay`,
-    payload,
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.GATEWAY_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    }
-  );
-
-  return response.data;
-}
-
-module.exports = { processPayment };
-```
-
----
-
-## 9. Database Schema & SQL Query
-
-### 9.1 ERD
-
-```
-users (1) ─────────────────── (*) shipments
-                                       │
-                                       │ (1)
-                                       │
-                                  (*) tracking_logs
-
-shipments (1) ──────────────── (*) transaction_logs
-```
-
-### 9.2 SQL DDL — Buat Database & Tabel
+### Status Enum
 
 ```sql
--- ============================================================
--- DATABASE LOGISTIKITA
--- ============================================================
-CREATE DATABASE IF NOT EXISTS logistikita_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE logistikita_db;
-
--- ============================================================
--- TABEL: users
--- Menyimpan referensi user dari ekosistem SmartBank.
--- User diregistrasi di SmartBank; LogistiKita hanya menyimpan
--- user_id sebagai foreign key untuk validasi lokal.
--- ============================================================
-CREATE TABLE users (
-  id          VARCHAR(36)   NOT NULL PRIMARY KEY,
-  name        VARCHAR(100)  NOT NULL,
-  email       VARCHAR(150)  NOT NULL UNIQUE,
-  created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
-                            ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- TABEL: shipments
--- Satu record per pengiriman. order_id bersifat UNIQUE
--- untuk mencegah duplikat permintaan pengiriman.
--- ============================================================
-CREATE TABLE shipments (
-  id                VARCHAR(36)     NOT NULL PRIMARY KEY,
-  order_id          VARCHAR(100)    NOT NULL UNIQUE,
-  user_id           VARCHAR(36)     NOT NULL,
-  source_app        ENUM('marketplace', 'supplierhub') NOT NULL,
-  alamat_tujuan     TEXT            NOT NULL,
-  jarak_km          DECIMAL(10,2)   NOT NULL,
-  nilai_transaksi   BIGINT          NOT NULL,
-  ongkir            BIGINT          NOT NULL DEFAULT 0,
-  fee_layanan       BIGINT          NOT NULL DEFAULT 0,
-  total_biaya       BIGINT          NOT NULL DEFAULT 0,
-  status            ENUM(
-                      'PENDING',
-                      'PROCESSING',
-                      'SHIPPED',
-                      'DELIVERED',
-                      'FAILED'
-                    ) NOT NULL DEFAULT 'PENDING',
-  transaction_id    VARCHAR(100)    NULL,
-  created_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    ON UPDATE CURRENT_TIMESTAMP,
-
-  CONSTRAINT fk_shipments_user
-    FOREIGN KEY (user_id)
-    REFERENCES users(id)
-    ON DELETE RESTRICT
-    ON UPDATE CASCADE,
-
-  INDEX idx_shipments_user_id  (user_id),
-  INDEX idx_shipments_status   (status),
-  INDEX idx_shipments_created  (created_at)
-) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- TABEL: tracking_logs
--- Riwayat perubahan status pengiriman (append-only).
--- Setiap perubahan status dicatat sebagai baris baru.
--- ============================================================
-CREATE TABLE tracking_logs (
-  id            BIGINT UNSIGNED   NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  shipment_id   VARCHAR(36)       NOT NULL,
-  status        ENUM(
-                  'PENDING',
-                  'PROCESSING',
-                  'SHIPPED',
-                  'DELIVERED',
-                  'FAILED'
-                ) NOT NULL,
-  keterangan    VARCHAR(255)      NULL,
-  created_at    DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-  CONSTRAINT fk_tracking_shipment
-    FOREIGN KEY (shipment_id)
-    REFERENCES shipments(id)
-    ON DELETE CASCADE
-    ON UPDATE CASCADE,
-
-  INDEX idx_tracking_shipment (shipment_id),
-  INDEX idx_tracking_created  (created_at)
-) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- TABEL: transaction_logs
--- Audit trail semua percobaan pembayaran ke SmartBank.
--- Mencatat sukses maupun gagal.
--- ============================================================
-CREATE TABLE transaction_logs (
-  id                  BIGINT UNSIGNED   NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  shipment_id         VARCHAR(36)       NOT NULL,
-  order_id            VARCHAR(100)      NOT NULL,
-  user_id             VARCHAR(36)       NOT NULL,
-  amount              BIGINT            NOT NULL,
-  ongkir              BIGINT            NOT NULL,
-  fee_layanan         BIGINT            NOT NULL,
-  payment_status      ENUM('SUCCESS', 'FAILED', 'PENDING') NOT NULL DEFAULT 'PENDING',
-  transaction_id      VARCHAR(100)      NULL,
-  error_code          VARCHAR(100)      NULL,
-  error_message       TEXT              NULL,
-  smartbank_payload   JSON              NULL,
-  smartbank_response  JSON              NULL,
-  created_at          DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-  CONSTRAINT fk_txlog_shipment
-    FOREIGN KEY (shipment_id)
-    REFERENCES shipments(id)
-    ON DELETE CASCADE
-    ON UPDATE CASCADE,
-
-  INDEX idx_txlog_shipment  (shipment_id),
-  INDEX idx_txlog_user      (user_id),
-  INDEX idx_txlog_status    (payment_status),
-  INDEX idx_txlog_created   (created_at)
-) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_unicode_ci;
-```
-
----
-
-### 9.3 SQL DML — Query Operasional
-
-#### Query 1 — INSERT: Buat shipment baru (status PENDING)
-
-```sql
--- Dieksekusi saat POST /request_pengiriman diterima
-INSERT INTO shipments (
-  id,
-  order_id,
-  user_id,
-  source_app,
-  alamat_tujuan,
-  jarak_km,
-  nilai_transaksi,
-  status
-) VALUES (
-  UUID(),                                         -- Auto-generate UUID
-  'ORD-20240601-0001',
-  'USR-001',
-  'marketplace',
-  'Jl. Merdeka No. 10, Bandung, Jawa Barat',
-  12.50,
-  150000,
-  'PENDING'
-);
-```
-
-#### Query 2 — UPDATE: Simpan hasil kalkulasi biaya
-
-```sql
--- Dieksekusi setelah hitungOngkir() dan hitungFeeLayanan() selesai
-UPDATE shipments
-SET
-  ongkir        = 7500,
-  fee_layanan   = 375,
-  total_biaya   = 7875,
-  updated_at    = CURRENT_TIMESTAMP
-WHERE order_id = 'ORD-20240601-0001';
-```
-
-#### Query 3 — UPDATE: Update status setelah pembayaran SmartBank SUKSES
-
-```sql
--- Dieksekusi setelah SmartBank merespons SUCCESS
-UPDATE shipments
-SET
-  status         = 'PROCESSING',
-  transaction_id = 'TRX-SBANK-9981',
-  updated_at     = CURRENT_TIMESTAMP
-WHERE order_id = 'ORD-20240601-0001';
-```
-
-#### Query 4 — UPDATE: Update status setelah pembayaran SmartBank GAGAL
-
-```sql
--- Dieksekusi setelah SmartBank merespons FAILED
-UPDATE shipments
-SET
-  status     = 'FAILED',
-  updated_at = CURRENT_TIMESTAMP
-WHERE order_id = 'ORD-20240601-0001';
-```
-
-#### Query 5 — INSERT: Catat perubahan status ke tracking_logs
-
-```sql
--- Dipanggil setiap kali status shipment berubah
--- Menggunakan subquery untuk mendapatkan shipment_id dari order_id
-INSERT INTO tracking_logs (shipment_id, status, keterangan)
-SELECT
-  id,
-  'PROCESSING',
-  'Pembayaran ongkir berhasil, menunggu kurir'
-FROM shipments
-WHERE order_id = 'ORD-20240601-0001';
-```
-
-#### Query 6 — INSERT: Log transaksi pembayaran (sukses)
-
-```sql
--- Dieksekusi setelah konfirmasi SmartBank, catat detail transaksi
-INSERT INTO transaction_logs (
-  shipment_id,
-  order_id,
-  user_id,
-  amount,
-  ongkir,
-  fee_layanan,
-  payment_status,
-  transaction_id,
-  smartbank_payload,
-  smartbank_response
-)
-SELECT
-  s.id                                          AS shipment_id,
-  s.order_id,
-  s.user_id,
-  s.total_biaya                                 AS amount,
-  s.ongkir,
-  s.fee_layanan,
-  'SUCCESS'                                     AS payment_status,
-  'TRX-SBANK-9981'                              AS transaction_id,
-  JSON_OBJECT(
-    'from_user', s.user_id,
-    'to_service', 'logistikita',
-    'amount', s.total_biaya
-  )                                             AS smartbank_payload,
-  JSON_OBJECT(
-    'status', 'SUCCESS',
-    'transaction_id', 'TRX-SBANK-9981'
-  )                                             AS smartbank_response
-FROM shipments s
-WHERE s.order_id = 'ORD-20240601-0001';
-```
-
-#### Query 7 — INSERT: Log transaksi pembayaran (gagal)
-
-```sql
--- Dieksekusi saat SmartBank menolak, catat error untuk audit trail
-INSERT INTO transaction_logs (
-  shipment_id,
-  order_id,
-  user_id,
-  amount,
-  ongkir,
-  fee_layanan,
-  payment_status,
-  error_code,
-  error_message,
-  smartbank_response
-)
-SELECT
-  s.id,
-  s.order_id,
-  s.user_id,
-  s.total_biaya,
-  s.ongkir,
-  s.fee_layanan,
-  'FAILED'                                      AS payment_status,
-  'INSUFFICIENT_BALANCE'                        AS error_code,
-  'Saldo user tidak mencukupi untuk pembayaran ongkir' AS error_message,
-  JSON_OBJECT(
-    'status', 'FAILED',
-    'error_code', 'INSUFFICIENT_BALANCE'
-  )                                             AS smartbank_response
-FROM shipments s
-WHERE s.order_id = 'ORD-20240601-0001';
-```
-
-#### Query 8 — SELECT: Ambil data tracking untuk user (dengan validasi kepemilikan)
-
-```sql
--- Dieksekusi saat GET /tracking_status?order_id=...
--- user_id diambil dari JWT token untuk validasi kepemilikan
-SELECT
-  s.id              AS shipment_id,
-  s.order_id,
-  s.status          AS status_terkini,
-  s.alamat_tujuan,
-  s.jarak_km,
-  s.ongkir,
-  s.fee_layanan,
-  s.total_biaya,
-  s.transaction_id,
-  s.source_app,
-  s.created_at
-FROM shipments s
-WHERE s.order_id = 'ORD-20240601-0001'
-  AND s.user_id  = 'USR-001';   -- Validasi kepemilikan dari JWT
-```
-
-#### Query 9 — SELECT: Ambil riwayat status pengiriman
-
-```sql
--- JOIN tracking_logs untuk mendapatkan histori status
-SELECT
-  tl.status,
-  tl.keterangan,
-  tl.created_at AS timestamp
-FROM tracking_logs tl
-INNER JOIN shipments s
-  ON tl.shipment_id = s.id
-WHERE s.order_id = 'ORD-20240601-0001'
-ORDER BY tl.created_at ASC;
-```
-
-#### Query 10 — SELECT: Cek duplikasi order_id
-
-```sql
--- Dieksekusi di awal POST /request_pengiriman sebelum INSERT
-SELECT COUNT(*) AS total
-FROM shipments
-WHERE order_id = 'ORD-20240601-0001';
--- Jika total > 0 → tolak dengan error DUPLICATE_ORDER
-```
-
-#### Query 11 — SELECT: Cek jumlah transaksi user hari ini (Daily Limit)
-
-```sql
--- Untuk validasi MAX 10 transaksi/user/hari
-SELECT COUNT(*) AS total_hari_ini
-FROM shipments
-WHERE user_id    = 'USR-001'
-  AND DATE(created_at) = CURDATE()
-  AND status IN ('PROCESSING', 'SHIPPED', 'DELIVERED');
--- Jika total_hari_ini >= 10 → tolak dengan error DAILY_LIMIT_EXCEEDED
-```
-
-#### Query 12 — SELECT: Cek waktu transaksi terakhir (Cooldown)
-
-```sql
--- Untuk validasi cooldown 10–30 detik antar transaksi
-SELECT MAX(created_at) AS last_transaction
-FROM shipments
-WHERE user_id = 'USR-001';
--- Di aplikasi: hitung selisih detik antara CURRENT_TIMESTAMP dan last_transaction
--- Jika selisih < 10 detik → tolak dengan error COOLDOWN_ACTIVE
-```
-
-#### Query 13 — SELECT: Admin — Semua shipment dengan status tertentu
-
-```sql
--- Digunakan untuk admin dashboard atau debugging
-SELECT
-  s.id             AS shipment_id,
-  s.order_id,
-  s.user_id,
-  u.name           AS user_name,
-  s.status,
-  s.total_biaya,
-  s.source_app,
-  s.created_at
-FROM shipments s
-LEFT JOIN users u ON s.user_id = u.id
-WHERE s.status = 'FAILED'                 -- Ganti status sesuai kebutuhan
-ORDER BY s.created_at DESC
-LIMIT 50;
-```
-
-#### Query 14 — SELECT: Laporan agregat transaksi per hari
-
-```sql
--- Digunakan untuk monitoring dan laporan keuangan
-SELECT
-  DATE(created_at)          AS tanggal,
-  COUNT(*)                  AS total_pengiriman,
-  SUM(CASE WHEN status IN ('PROCESSING','SHIPPED','DELIVERED') THEN 1 ELSE 0 END)
-                            AS berhasil,
-  SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END)
-                            AS gagal,
-  SUM(total_biaya)          AS total_revenue,
-  SUM(ongkir)               AS total_ongkir,
-  SUM(fee_layanan)          AS total_fee_layanan
-FROM shipments
-GROUP BY DATE(created_at)
-ORDER BY tanggal DESC;
-```
-
-#### Query 15 — UPDATE: Manual update status ke SHIPPED (oleh kurir/admin)
-
-```sql
--- Digunakan saat kurir mengkonfirmasi pengambilan barang
--- (Fitur ini dapat diperluas dengan endpoint admin/kurir di masa depan)
-UPDATE shipments
-SET
-  status     = 'SHIPPED',
-  updated_at = CURRENT_TIMESTAMP
-WHERE id = 'SHIP-20240601-0001'
-  AND status = 'PROCESSING';   -- Guard: hanya bisa SHIPPED jika sebelumnya PROCESSING
-
--- Kemudian insert ke tracking_logs
-INSERT INTO tracking_logs (shipment_id, status, keterangan)
-VALUES ('SHIP-20240601-0001', 'SHIPPED', 'Barang telah diambil kurir');
-```
-
-#### Query 16 — UPDATE: Manual update status ke DELIVERED
-
-```sql
--- Digunakan saat pengiriman dikonfirmasi tiba
-UPDATE shipments
-SET
-  status     = 'DELIVERED',
-  updated_at = CURRENT_TIMESTAMP
-WHERE id = 'SHIP-20240601-0001'
-  AND status = 'SHIPPED';   -- Guard: hanya bisa DELIVERED jika sebelumnya SHIPPED
-
--- Kemudian insert ke tracking_logs
-INSERT INTO tracking_logs (shipment_id, status, keterangan)
-VALUES ('SHIP-20240601-0001', 'DELIVERED', 'Barang berhasil diterima penerima');
+ENUM('PENDING', 'PICKUP', 'IN_TRANSIT', 'AT_BRANCH', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED')
 ```
 
 ---
 
 ## 10. Error Handling & Response Standard
 
-### 10.1 Standard Response Format
+### Standard Response Format
 
 **Sukses:**
 ```json
-{
-  "success": true,
-  "data": { ... }
-}
+{ "success": true, "data": { ... } }
 ```
 
 **Gagal:**
 ```json
-{
-  "success": false,
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Pesan error yang jelas dan actionable.",
-    "details": { ... }   // Opsional: informasi tambahan
-  }
-}
+{ "success": false, "error": { "code": "ERROR_CODE", "message": "Pesan." } }
 ```
 
-### 10.2 `responseHelper.js`
+### HTTP Status Codes
 
-```javascript
-const success = (res, data, statusCode = 200) => {
-  return res.status(statusCode).json({ success: true, data });
-};
-
-const error = (res, code, message, statusCode = 400, details = null) => {
-  const payload = { success: false, error: { code, message } };
-  if (details) payload.error.details = details;
-  return res.status(statusCode).json(payload);
-};
-
-module.exports = { success, error };
-```
-
-### 10.3 Global Error Handler (`app.js`)
-
-```javascript
-app.use((err, req, res, next) => {
-  console.error('[UNHANDLED ERROR]', err);
-  res.status(500).json({
-    success: false,
-    error: {
-      code: 'INTERNAL_ERROR',
-      message: 'Terjadi kesalahan internal. Silakan coba lagi.'
-    }
-  });
-});
-```
-
----
-
-## 11. Rate Limiting & Validasi Keuangan
-
-### 11.1 Aturan Rate Limiting
-
-| Aturan | Nilai | Enforcement |
+| Code | Kode Error | Kondisi |
 |---|---|---|
-| Cooldown antar transaksi | 10 detik minimum | Cek `MAX(created_at)` dari `shipments` per user |
-| Maksimum transaksi harian | 10 transaksi/user/hari | COUNT dari `shipments` per user per hari |
+| 200 | — | Sukses (GET/PUT) |
+| 201 | — | Created (POST) |
+| 400 | `VALIDATION_ERROR` | Input tidak valid |
+| 400 | `DUPLICATE_ORDER` | order_id duplikat |
+| 400 | `DISTANCE_EXCEEDED` | Jarak melebihi batas tipe pengiriman |
+| 401 | `MISSING_TOKEN` | Tidak ada token |
+| 401 | `INVALID_TOKEN` | Token expired/invalid |
+| 402 | `PAYMENT_FAILED` | SmartBank menolak |
+| 403 | `FORBIDDEN` | Role tidak sesuai |
+| 404 | `SHIPMENT_NOT_FOUND` | Data tidak ditemukan |
+| 404 | `USER_NOT_FOUND` | User tidak ditemukan |
+| 409 | `EMAIL_EXISTS` | Email sudah terdaftar (register) |
+| 429 | `DAILY_LIMIT_EXCEEDED` | Melebihi 10 tx/hari |
+| 429 | `COOLDOWN_ACTIVE` | Terlalu cepat |
+| 500 | `INTERNAL_ERROR` | Error server |
+| 503 | `SMARTBANK_DOWN` | SmartBank tidak tersedia |
 
-### 11.2 Ringkasan Semua Fee
+---
 
-| # | Komponen Fee | Formula | Dipotong Oleh | Aliran Uang |
-|---|---|---|---|---|
-| 1 | Ongkir (Biaya Pengiriman) | `MAX(nilai_tx × 5%, Rp5.000)` | LogistiKita | User → LogistiKita |
-| 2 | Fee Layanan Logistik | `ongkir × 5%` | LogistiKita | User → LogistiKita |
-| 3 | Fee Gateway | `total_biaya × 0.5%` | API Gateway | User → Gateway |
-| 4 | Fee Bank | `total_biaya × 1%` | SmartBank | User → Reserve SmartBank |
-| 5 | Pajak Sistem | `total_biaya × 2%` | SmartBank | User → Money Sink |
+## 11. Alur Eksekusi Per Fitur
 
-### 11.3 Simulasi Alur Uang (Transaksi Rp150.000)
+### 11.1 Register
 
 ```
-User membayar total = Rp8.150 (dari saldo SmartBank)
+POST /api/auth/register
+  → Validasi input (name, email, password)
+  → Cek email unik
+  → Hash password (bcrypt)
+  → INSERT user (role=customer)
+  → Generate JWT
+  → Response 201
+```
 
-Breakdown debit user:
-  Pokok (total_biaya)   : Rp7.875
-  Fee Bank (1%)         : Rp  79
-  Pajak Sistem (2%)     : Rp 157
-  Fee Gateway (0.5%)    : Rp  39
-  ─────────────────────────────
-  Total Debit           : Rp8.150
+### 11.2 Login
 
-Aliran uang:
-  → LogistiKita account   : Rp7.875 (dikreditkan SmartBank)
-  → Reserve SmartBank     : Rp   79 (Fee Bank)
-  → Money Sink (dihapus)  : Rp  157 (Pajak Sistem)
-  → Gateway account       : Rp   39 (Fee Gateway)
+```
+POST /api/auth/login
+  → Validasi input (email, password)
+  → SELECT user by email
+  → bcrypt.compare password
+  → Generate JWT
+  → Response 200
+```
+
+### 11.3 Buat Pengiriman (User)
+
+```
+POST /api/pengiriman
+  │
+  ▼
+[1] authMiddleware (JWT → user_id, role=customer)
+  │ FAIL → 401
+  ▼
+[2] rateLimitMiddleware (daily + cooldown)
+  │ FAIL → 429
+  ▼
+[3] Validasi input (alamat, koordinat, tipe)
+  │ FAIL → 400
+  ▼
+[4] Haversine: hitung jarak dari koordinat
+  ▼
+[5] Validasi batas jarak (sameday ≤50, nextday ≤250)
+  │ FAIL → 400 DISTANCE_EXCEEDED
+  ▼
+[6] hitungOngkir(jarak, tipe) + hitungFeeLayanan(ongkir)
+  ▼
+[7] routingService: hitung rute cabang
+  ▼
+[8] Generate order_id unik
+  ▼
+[9] INSERT shipment (status=PENDING) + INSERT shipment_routes + INSERT tracking_log (PENDING)
+  ▼
+[10] POST /logistics/pay → Gateway → SmartBank
+  │
+  ├─ SUCCESS → UPDATE status=PENDING (menunggu kurir), INSERT tracking_log, INSERT transaction_log
+  │            Response 201
+  │
+  └─ FAILED → UPDATE status=FAILED, INSERT tracking_log, INSERT transaction_log
+              Response 402
+```
+
+### 11.4 Tracking (Publik)
+
+```
+GET /api/tracking/:order_id
+  │
+  ▼
+[1] Validasi order_id tidak kosong
+  ▼
+[2] SELECT shipment WHERE order_id = ?
+  │ NOT FOUND → 404
+  ▼
+[3] SELECT shipment_routes + branches (JOIN)
+  ▼
+[4] SELECT tracking_logs ORDER BY created_at ASC
+  ▼
+[5] Response 200 (status, rute cabang + progress, riwayat)
+```
+
+### 11.5 Kurir Pickup
+
+```
+PUT /api/kurir/pickup/:shipment_id
+  │
+  ▼
+[1] authMiddleware + roleMiddleware('kurir')
+  ▼
+[2] SELECT shipment WHERE id = ? AND assigned_kurir_id = req.user.user_id AND status = 'PENDING'
+  │ NOT FOUND → 404 / 403
+  ▼
+[3] UPDATE shipment: status = 'PICKUP' then 'IN_TRANSIT'
+[4] INSERT tracking_log: PICKUP
+[5] INSERT tracking_log: IN_TRANSIT + "Menuju [cabang pertama]"
+  ▼
+[6] Response 200
+```
+
+### 11.6 Kurir Tiba di Cabang
+
+```
+PUT /api/kurir/tiba-cabang/:shipment_id
+  │
+  ▼
+[1] authMiddleware + roleMiddleware('kurir')
+  ▼
+[2] SELECT shipment WHERE id = ? AND status = 'IN_TRANSIT'
+  ▼
+[3] Tentukan cabang berikutnya dari shipment_routes (sequence)
+[4] UPDATE shipment: status = 'AT_BRANCH', current_branch_id = branch_id
+[5] UPDATE shipment_routes: arrived_at = NOW() WHERE sequence = next
+[6] INSERT tracking_log: AT_BRANCH + "Tiba di [nama cabang]"
+  ▼
+[7] Response 200
+```
+
+### 11.7 Admin Overview
+
+```
+GET /api/admin/overview
+  │
+  ▼
+[1] authMiddleware + roleMiddleware('admin')
+  ▼
+[2] COUNT(shipments) → total_pengiriman
+[3] COUNT(WHERE status NOT IN DELIVERED/FAILED) → aktif
+[4] SUM(total_biaya WHERE status IN SUCCESS) → revenue
+[5] COUNT(users WHERE role=kurir) → total_kurir
+[6] GROUP BY DATE(created_at) LIMIT 7 → tren harian
+[7] GROUP BY status → distribusi status
+[8] GROUP BY current_branch_id → per cabang
+  ▼
+[9] Response 200
+```
+
+### 11.8 Admin Keuangan
+
+```
+GET /api/admin/keuangan
+  │
+  ▼
+[1] authMiddleware + roleMiddleware('admin')
+  ▼
+[2] SUM(ongkir) → total_ongkir
+[3] SUM(fee_layanan) → total_fee (keuntungan LogistiKita)
+[4] SUM(total_biaya) → total_ditagih
+[5] AVG(ongkir) → rata_rata
+[6] GROUP BY DATE(created_at) → revenue harian (chart)
+[7] GROUP BY tipe_pengiriman → breakdown per tipe (chart)
+  ▼
+[8] Response 200
 ```
 
 ---
 
-## 12. Alur Eksekusi Per Fitur (Flow Diagram)
+## 12. Acceptance Criteria
 
-### 12.1 Alur Utama: Request Pengiriman
+### Auth
 
-```
-POST /request_pengiriman
-         │
-         ▼
-[1] authMiddleware (JWT validation)
-         │ FAIL → 401 Unauthorized
-         ▼
-[2] rateLimitMiddleware (daily limit + cooldown)
-         │ FAIL → 429 Too Many Requests
-         ▼
-[3] Validasi input (order_id, user_id, jarak, nilai_transaksi, source_app)
-         │ FAIL → 400 Validation Error
-         ▼
-[4] SELECT: Cek duplikasi order_id
-         │ FOUND → 400 Duplicate Order
-         ▼
-[5] INSERT: Buat shipment baru (status = PENDING)
-         ▼
-[6] hitungOngkir(nilai_transaksi)
-    → ongkir = MAX(nilai_transaksi × 5%, 5000)
-         ▼
-[7] hitungFeeLayanan(ongkir)
-    → fee_layanan = FLOOR(ongkir × 5%)
-         ▼
-[8] UPDATE: Simpan ongkir, fee_layanan, total_biaya ke shipments
-         ▼
-[9] POST /logistics/pay → API Gateway → SmartBank
-         │
-         ├─ SMARTBANK SUCCESS ─────────────────────────────┐
-         │                                                 │
-         │  UPDATE shipments: status = PROCESSING          │
-         │  INSERT tracking_logs: PROCESSING               │
-         │  INSERT transaction_logs: SUCCESS               │
-         │  Response 201: { shipment_id, status, ...fees } │
-         │                                                 │
-         └─ SMARTBANK FAILED ──────────────────────────────┤
-                                                           │
-            UPDATE shipments: status = FAILED              │
-            INSERT tracking_logs: FAILED                   │
-            INSERT transaction_logs: FAILED + error_code   │
-            Response 402: { error, smartbank_error }       │
-```
+- [ ] Register customer berhasil dengan bcrypt hash
+- [ ] Register menolak email duplikat (409)
+- [ ] Login mengembalikan JWT token dengan role
+- [ ] `/api/auth/me` mengembalikan info user dari token
 
-### 12.2 Alur: Tracking Status
+### Pengiriman (User)
 
-```
-GET /tracking_status?order_id=...
-         │
-         ▼
-[1] authMiddleware (JWT → ekstrak user_id)
-         │ FAIL → 401 Unauthorized
-         ▼
-[2] Validasi query param: order_id tidak kosong
-         │ FAIL → 400 Validation Error
-         ▼
-[3] SELECT shipments WHERE order_id = ? AND user_id = ?
-         │ NOT FOUND → 404 Shipment Not Found
-         │ user_id MISMATCH → 403 Forbidden
-         ▼
-[4] SELECT tracking_logs WHERE shipment_id = ? ORDER BY created_at ASC
-         ▼
-[5] Susun response: { shipment_id, status_terkini, riwayat_status, ... }
-         ▼
-[6] Response 200 OK
-```
+- [ ] Customer bisa buat pengiriman via `POST /pengiriman`
+- [ ] Jarak dihitung otomatis via Haversine
+- [ ] Validasi batas jarak per tipe: Sameday ≤ 50 km, Nextday ≤ 250 km
+- [ ] Ongkir dihitung: jarak × tarif per km
+- [ ] Fee layanan: 5% dari ongkir
+- [ ] Rute cabang dihitung otomatis
+- [ ] Pembayaran dikirim ke SmartBank
+- [ ] `GET /pengiriman-saya` hanya menampilkan milik user yang login
 
----
+### Pengiriman (API)
 
-## 13. Acceptance Criteria
+- [ ] Menerima request dari Marketplace/SupplierHub via `POST /request-pengiriman`
+- [ ] Default tipe = reguler jika tidak dikirim
+- [ ] Duplikat order_id ditolak
 
-### Feature 1 — Request Pengiriman
+### Tracking
 
-- [ ] Menerima dan memvalidasi semua required field
-- [ ] Menolak `order_id` duplikat dengan error `DUPLICATE_ORDER`
-- [ ] Menjalankan kalkulasi ongkir dengan formula `MAX(nilai_tx × 5%, 5000)` secara benar
-- [ ] Menjalankan kalkulasi fee layanan dengan formula `ongkir × 5%` secara benar
-- [ ] Mengirimkan payment request ke SmartBank via API Gateway
-- [ ] Meng-update status shipment berdasarkan response SmartBank
-- [ ] Mencatat setiap percobaan di `transaction_logs` (termasuk yang gagal)
-- [ ] Mencatat perubahan status di `tracking_logs`
-- [ ] Mengembalikan response 201 Created jika sukses
-- [ ] Mengembalikan response 402 jika SmartBank menolak
+- [ ] `GET /tracking/:order_id` tidak memerlukan JWT
+- [ ] Menampilkan rute cabang + status arrived/departed per cabang
+- [ ] Menampilkan riwayat status lengkap
 
-### Feature 2 — Biaya Pengiriman
+### Kurir
 
-- [ ] Menghitung ongkir sesuai formula dengan benar
-- [ ] Menerapkan minimum Rp5.000 jika 5% < Rp5.000
-- [ ] Mengembalikan breakdown kalkulasi dalam response
+- [ ] Hanya kurir yang bisa akses endpoint kurir (role check)
+- [ ] Pickup mengubah status PENDING → PICKUP → IN_TRANSIT
+- [ ] Tiba di cabang mengubah status → AT_BRANCH + catat cabang
+- [ ] Lanjut transit dari AT_BRANCH → IN_TRANSIT (jika belum cabang tujuan)
+- [ ] Antar ke penerima dari AT_BRANCH → OUT_FOR_DELIVERY (jika cabang tujuan)
+- [ ] Delivered mengubah status → DELIVERED
+- [ ] Setiap aksi tercatat di tracking_logs
 
-### Feature 3 — Pembayaran Logistik
+### Admin
 
-- [ ] Mengirimkan payload lengkap ke SmartBank via Gateway
-- [ ] Menangani semua error code SmartBank sesuai tabel 8.4
-- [ ] Tidak pernah memproses saldo langsung
-
-### Feature 4 — Tracking Status
-
-- [ ] Memvalidasi kepemilikan order (user_id dari JWT = user_id di shipments)
-- [ ] Mengembalikan status terkini dan riwayat lengkap
-- [ ] Mengembalikan 403 jika user tidak berhak
-
-### Feature 5 — Biaya Layanan Logistik
-
-- [ ] Menghitung fee 5% dari ongkir dengan benar
-- [ ] Selalu disertakan dalam setiap transaksi pengiriman (tidak bisa opt-out)
+- [ ] Overview mengembalikan summary cards + data chart
+- [ ] Keuangan mengembalikan revenue + breakdown per tipe
+- [ ] CRUD users berfungsi (tambah kurir/admin)
+- [ ] CRUD cabang berfungsi
+- [ ] Assign kurir ke paket berfungsi
+- [ ] Ubah status shipment berfungsi
 
 ### Non-Functional
 
-- [ ] Semua endpoint memvalidasi JWT (kecuali endpoint health check)
-- [ ] Rate limiting berjalan: max 10 tx/hari per user, cooldown 10 detik
-- [ ] Semua transaksi tercatat di `transaction_logs` (audit trail lengkap)
-- [ ] Response time < 3 detik (tidak termasuk waktu tunggu SmartBank)
-- [ ] Tidak ada saldo yang dimanipulasi langsung di database LogistiKita
+- [ ] Rate limiting: max 10 tx/hari, cooldown 10 detik
+- [ ] Semua transaksi tercatat di transaction_logs
+- [ ] Response time < 3 detik
+- [ ] Password di-hash dengan bcrypt
 
 ---
 
-*PRD Backend ini mengacu pada [README.md](./README.md) sebagai dokumen acuan utama. Semua implementasi harus konsisten dengan spesifikasi di dokumen tersebut.*
+*PRD Backend ini mengacu pada [README.md](./README.md) sebagai dokumen acuan utama.*
