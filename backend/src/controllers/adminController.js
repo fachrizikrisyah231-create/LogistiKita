@@ -9,16 +9,32 @@ const Branch = require('../models/Branch');
 class AdminController {
   async getOverview(req, res) {
     try {
-      const [[{ total_users }]] = await db.query('SELECT COUNT(*) as total_users FROM users');
-      const [[{ total_shipments }]] = await db.query('SELECT COUNT(*) as total_shipments FROM shipments');
+      const [[{ total_pengiriman }]] = await db.query('SELECT COUNT(*) as total_pengiriman FROM shipments');
+      const [[{ pengiriman_aktif }]] = await db.query('SELECT COUNT(*) as pengiriman_aktif FROM shipments WHERE status NOT IN ("DELIVERED", "FAILED")');
       const [[{ total_revenue }]] = await db.query('SELECT SUM(fee_layanan) as total_revenue FROM shipments WHERE status = "DELIVERED"');
-      const [[{ pending_shipments }]] = await db.query('SELECT COUNT(*) as pending_shipments FROM shipments WHERE status = "PENDING"');
+      const [[{ total_kurir }]] = await db.query('SELECT COUNT(*) as total_kurir FROM users WHERE role = "kurir"');
+
+      const [tren_pengiriman] = await db.query(`
+        SELECT DATE_FORMAT(created_at, '%m-%d') as name, COUNT(*) as value
+        FROM shipments
+        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+        GROUP BY DATE_FORMAT(created_at, '%m-%d')
+        ORDER BY name ASC
+      `);
+
+      const [status_pengiriman] = await db.query(`
+        SELECT status as name, COUNT(*) as value
+        FROM shipments
+        GROUP BY status
+      `);
 
       respond.success(res, 'Admin Overview', {
-        total_users,
-        total_shipments,
+        total_pengiriman,
+        pengiriman_aktif,
         total_revenue: total_revenue || 0,
-        pending_shipments
+        total_kurir,
+        tren_pengiriman,
+        status_pengiriman
       });
     } catch (err) {
       respond.error(res, 'FETCH_FAILED', err.message, 500);
@@ -28,10 +44,32 @@ class AdminController {
   async getKeuangan(req, res) {
     try {
       const [transactions] = await db.query('SELECT * FROM transaction_logs ORDER BY created_at DESC LIMIT 100');
-      const [[{ total_revenue }]] = await db.query('SELECT SUM(fee_layanan) as total_revenue FROM transaction_logs WHERE payment_status = "SUCCESS"');
       
+      const [[{ total_ongkir, total_fee, total_biaya, count }]] = await db.query(`
+        SELECT SUM(ongkir) as total_ongkir, SUM(fee_layanan) as total_fee, SUM(total_biaya) as total_biaya, COUNT(*) as count
+        FROM shipments
+      `);
+
+      const [tipe_pengiriman] = await db.query(`
+        SELECT tipe_pengiriman as name, COUNT(*) as value
+        FROM shipments
+        GROUP BY tipe_pengiriman
+      `);
+
+      const [revenue_bulanan] = await db.query(`
+        SELECT DATE_FORMAT(created_at, '%Y-%m') as name, SUM(fee_layanan) as revenue
+        FROM shipments
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+        ORDER BY name ASC
+      `);
+
       respond.success(res, 'Data Keuangan', {
-        total_revenue: total_revenue || 0,
+        total_pendapatan: total_biaya || 0,
+        total_ongkir: total_ongkir || 0,
+        total_fee: total_fee || 0,
+        rata_rata_ongkir: count ? (total_ongkir / count) : 0,
+        tipe_pengiriman,
+        revenue_bulanan,
         transactions
       });
     } catch (err) {

@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import { Package, Truck, Wallet, Activity } from 'lucide-react';
 import StatCard from '../../components/admin/StatCard';
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF4560'];
 
 export default function AdminOverview() {
   const [data, setData] = useState(null);
@@ -40,14 +43,49 @@ export default function AdminOverview() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-canvas p-8 rounded-xl shadow-sm border border-surface-pressed">
            <h2 className="text-display-sm font-bold mb-4">Tren Pengiriman (7 Hari)</h2>
-           <div className="h-64 flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">
-             [Chart Line placeholder]
+           <div className="h-64">
+             {data.tren_pengiriman && data.tren_pengiriman.length > 0 ? (
+               <ResponsiveContainer width="100%" height="100%">
+                 <LineChart data={data.tren_pengiriman}>
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                   <XAxis dataKey="name" />
+                   <YAxis allowDecimals={false} />
+                   <Tooltip />
+                   <Line type="monotone" dataKey="value" name="Total Paket" stroke="#0088FE" strokeWidth={3} />
+                 </LineChart>
+               </ResponsiveContainer>
+             ) : (
+               <div className="h-full flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">Belum ada data</div>
+             )}
            </div>
         </div>
         <div className="bg-canvas p-8 rounded-xl shadow-sm border border-surface-pressed">
            <h2 className="text-display-sm font-bold mb-4">Status Pengiriman</h2>
-           <div className="h-64 flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">
-             [Chart Donut placeholder]
+           <div className="h-64">
+             {data.status_pengiriman && data.status_pengiriman.length > 0 ? (
+               <ResponsiveContainer width="100%" height="100%">
+                 <PieChart>
+                   <Pie
+                     data={data.status_pengiriman}
+                     cx="50%"
+                     cy="50%"
+                     innerRadius={60}
+                     outerRadius={80}
+                     fill="#8884d8"
+                     paddingAngle={5}
+                     dataKey="value"
+                     label={({ name, value }) => `${name} (${value})`}
+                   >
+                     {data.status_pengiriman.map((entry, index) => (
+                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                     ))}
+                   </Pie>
+                   <Tooltip />
+                 </PieChart>
+               </ResponsiveContainer>
+             ) : (
+               <div className="h-full flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">Belum ada data</div>
+             )}
            </div>
         </div>
       </div>

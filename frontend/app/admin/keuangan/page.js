@@ -2,7 +2,10 @@
 import { useState, useEffect } from 'react';
 import api from '../../../lib/api';
 import StatCard from '../../../components/admin/StatCard';
-import { Wallet, DollarSign, PieChart, TrendingUp, Truck } from 'lucide-react';
+import { Wallet, DollarSign, PieChart as PieChartIcon, TrendingUp, Truck } from 'lucide-react';
+import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
 export default function AdminKeuangan() {
   const [keuangan, setKeuangan] = useState(null);
@@ -40,14 +43,55 @@ export default function AdminKeuangan() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         <div className="bg-canvas p-8 rounded-xl shadow-sm border border-surface-pressed">
            <h2 className="text-display-sm font-bold mb-4">Proporsi Tipe Pengiriman</h2>
-           <div className="h-64 flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">
-             [Pie Chart: Reguler vs Nextday vs Sameday]
+           <div className="h-64">
+             {keuangan.tipe_pengiriman && keuangan.tipe_pengiriman.length > 0 ? (
+               <ResponsiveContainer width="100%" height="100%">
+                 <PieChart>
+                   <Pie
+                     data={keuangan.tipe_pengiriman}
+                     cx="50%"
+                     cy="50%"
+                     innerRadius={60}
+                     outerRadius={80}
+                     fill="#8884d8"
+                     paddingAngle={5}
+                     dataKey="value"
+                     label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                   >
+                     {keuangan.tipe_pengiriman.map((entry, index) => (
+                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                     ))}
+                   </Pie>
+                   <Tooltip />
+                 </PieChart>
+               </ResponsiveContainer>
+             ) : (
+               <div className="h-full flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">Belum ada data</div>
+             )}
            </div>
         </div>
         <div className="bg-canvas p-8 rounded-xl shadow-sm border border-surface-pressed">
-           <h2 className="text-display-sm font-bold mb-4">Tren Pendapatan Bulanan</h2>
-           <div className="h-64 flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">
-             [Area Chart: Revenue]
+           <h2 className="text-display-sm font-bold mb-4">Tren Pendapatan (Fee Layanan)</h2>
+           <div className="h-64">
+             {keuangan.revenue_bulanan && keuangan.revenue_bulanan.length > 0 ? (
+               <ResponsiveContainer width="100%" height="100%">
+                 <AreaChart data={keuangan.revenue_bulanan}>
+                   <defs>
+                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                       <stop offset="5%" stopColor="#0088FE" stopOpacity={0.8}/>
+                       <stop offset="95%" stopColor="#0088FE" stopOpacity={0}/>
+                     </linearGradient>
+                   </defs>
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                   <XAxis dataKey="name" />
+                   <YAxis tickFormatter={(val) => `Rp${val / 1000}k`} />
+                   <Tooltip formatter={(value) => `Rp${value.toLocaleString('id-ID')}`} />
+                   <Area type="monotone" dataKey="revenue" stroke="#0088FE" fillOpacity={1} fill="url(#colorRevenue)" />
+                 </AreaChart>
+               </ResponsiveContainer>
+             ) : (
+               <div className="h-full flex items-center justify-center text-mute bg-canvas-soft rounded-lg border border-dashed border-surface-pressed">Belum ada data</div>
+             )}
            </div>
         </div>
       </div>
