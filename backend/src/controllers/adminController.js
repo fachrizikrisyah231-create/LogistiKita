@@ -9,16 +9,51 @@ const Branch = require('../models/Branch');
 class AdminController {
   async getOverview(req, res) {
     try {
-      const [[{ total_users }]] = await db.query('SELECT COUNT(*) as total_users FROM users');
-      const [[{ total_shipments }]] = await db.query('SELECT COUNT(*) as total_shipments FROM shipments');
+      // 1. Summary Cards Data
+      const [[{ total_pengiriman }]] = await db.query('SELECT COUNT(*) as total_pengiriman FROM shipments');
+      const [[{ pengiriman_aktif }]] = await db.query('SELECT COUNT(*) as pengiriman_aktif FROM shipments WHERE status NOT IN ("DELIVERED", "FAILED")');
       const [[{ total_revenue }]] = await db.query('SELECT SUM(fee_layanan) as total_revenue FROM shipments WHERE status = "DELIVERED"');
-      const [[{ pending_shipments }]] = await db.query('SELECT COUNT(*) as pending_shipments FROM shipments WHERE status = "PENDING"');
+      const [[{ total_kurir }]] = await db.query('SELECT COUNT(*) as total_kurir FROM users WHERE role = "kurir"');
+
+      // 2. 7-Day Shipment Trend
+      const [trendRows] = await db.query(`
+        SELECT DATE(created_at) as date, COUNT(*) as count 
+        FROM shipments 
+        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        GROUP BY DATE(created_at) 
+        ORDER BY date ASC
+      `);
+
+      // Fill in dates with 0 if no shipments occurred
+      const tren_pengiriman = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const match = trendRows.find(r => {
+          const rDate = r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date;
+          return rDate === dateStr;
+        });
+        tren_pengiriman.push({
+          date: dateStr,
+          count: match ? match.count : 0
+        });
+      }
+
+      // 3. Status Distribution
+      const [statusRows] = await db.query('SELECT status, COUNT(*) as count FROM shipments GROUP BY status');
+      const distribusi_status = statusRows.map(r => ({
+        name: r.status,
+        value: r.count
+      }));
 
       respond.success(res, 'Admin Overview', {
-        total_users,
-        total_shipments,
+        total_pengiriman,
+        pengiriman_aktif,
         total_revenue: total_revenue || 0,
-        pending_shipments
+        total_kurir,
+        tren_pengiriman,
+        distribusi_status
       });
     } catch (err) {
       respond.error(res, 'FETCH_FAILED', err.message, 500);
@@ -28,11 +63,72 @@ class AdminController {
   async getKeuangan(req, res) {
     try {
       const [transactions] = await db.query('SELECT * FROM transaction_logs ORDER BY created_at DESC LIMIT 100');
-      const [[{ total_revenue }]] = await db.query('SELECT SUM(fee_layanan) as total_revenue FROM transaction_logs WHERE payment_status = "SUCCESS"');
       
+      // Calculate totals
+      const [[totals]] = await db.query(`
+        SELECT 
+          SUM(amount) as total_pendapatan, 
+          SUM(ongkir) as total_ongkir, 
+          SUM(fee_layanan) as total_fee, 
+          AVG(ongkir) as rata_rata_ongkir 
+        FROM transaction_logs 
+        WHERE payment_status = "SUCCESS"
+      `);
+
+      // Statistics by shipping type
+      const [typeRows] = await db.query(`
+        SELECT 
+          s.tipe_pengiriman, 
+          SUM(t.amount) as total_revenue, 
+          SUM(t.fee_layanan) as fee_revenue, 
+          SUM(t.ongkir) as ongkir_revenue, 
+          COUNT(*) as count 
+        FROM transaction_logs t 
+        JOIN shipments s ON t.shipment_id = s.id 
+        WHERE t.payment_status = "SUCCESS" 
+        GROUP BY s.tipe_pengiriman
+      `);
+
+      // 30-Day Daily Revenue Trend
+      const [dailyRows] = await db.query(`
+        SELECT 
+          DATE(t.created_at) as date, 
+          SUM(t.amount) as revenue, 
+          SUM(t.fee_layanan) as fee, 
+          SUM(t.ongkir) as ongkir 
+        FROM transaction_logs t 
+        WHERE t.payment_status = "SUCCESS" 
+          AND t.created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+        GROUP BY DATE(t.created_at) 
+        ORDER BY date ASC
+      `);
+
+      // Fill in missing dates for the last 30 days
+      const daily_revenue = [];
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const match = dailyRows.find(r => {
+          const rDate = r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date;
+          return rDate === dateStr;
+        });
+        daily_revenue.push({
+          date: dateStr,
+          revenue: match ? parseFloat(match.revenue) : 0,
+          fee: match ? parseFloat(match.fee) : 0,
+          ongkir: match ? parseFloat(match.ongkir) : 0
+        });
+      }
+
       respond.success(res, 'Data Keuangan', {
-        total_revenue: total_revenue || 0,
-        transactions
+        total_pendapatan: totals.total_pendapatan || 0,
+        total_ongkir: totals.total_ongkir || 0,
+        total_fee: totals.total_fee || 0,
+        rata_rata_ongkir: totals.rata_rata_ongkir || 0,
+        transactions,
+        stats_by_type: typeRows,
+        daily_revenue
       });
     } catch (err) {
       respond.error(res, 'FETCH_FAILED', err.message, 500);
