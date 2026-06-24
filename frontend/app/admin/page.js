@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import { Package, Truck, Wallet, Activity } from 'lucide-react';
 import StatCard from '../../components/admin/StatCard';
 import RevenueChart from '../../components/admin/RevenueChart';
+import { formatRupiah } from '../../lib/format';
 
 export default function AdminOverview() {
   const [data, setData] = useState(null);
@@ -38,7 +39,7 @@ export default function AdminOverview() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard title="Total Pengiriman" value={data.total_pengiriman || 0} icon={<Package size={24} />} colorClass="text-blue-600 bg-blue-50" />
         <StatCard title="Pengiriman Aktif" value={data.pengiriman_aktif || 0} icon={<Activity size={24} />} colorClass="text-yellow-600 bg-yellow-50" />
-        <StatCard title="Total Revenue (Fee)" value={`Rp${(data.total_revenue || 0).toLocaleString('id-ID')}`} icon={<Wallet size={24} />} colorClass="text-green-600 bg-green-50" />
+        <StatCard title="Total Revenue (Fee)" value={`Rp${formatRupiah(data.total_revenue)}`} icon={<Wallet size={24} />} colorClass="text-green-600 bg-green-50" />
         <StatCard title="Total Kurir" value={data.total_kurir || 0} icon={<Truck size={24} />} colorClass="text-indigo-600 bg-indigo-50" />
       </div>
 

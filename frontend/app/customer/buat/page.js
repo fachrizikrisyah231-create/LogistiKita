@@ -75,9 +75,9 @@ export default function BuatPengiriman() {
       setEstimasi({
         jarak_km: ongkirData.jarak_km,
         tipe_pengiriman: ongkirData.tipe_pengiriman,
-        ongkir: feeData.ongkir,
+        ongkir: ongkirData.ongkir,
         fee_layanan: feeData.fee_layanan,
-        total_biaya: feeData.total_biaya
+        total_biaya: ongkirData.ongkir + feeData.fee_layanan
       });
     } catch (err) {
       setEstimasi(null);
@@ -240,12 +240,10 @@ export default function BuatPengiriman() {
               
               {!form.lat_asal || !form.lat_tujuan ? (
                 <div className="text-body-md text-mute text-center py-8">Isi koordinat asal dan tujuan untuk melihat estimasi</div>
-              ) : loadingEst ? (
-                <div className="text-body-md text-ink text-center py-8">Menghitung...</div>
               ) : errorEst ? (
                 <div className="text-body-md text-red-600 bg-red-50 p-4 rounded-md">{errorEst}</div>
               ) : estimasi ? (
-                <div className="space-y-4">
+                <div className={`space-y-4 transition-opacity duration-300 ${loadingEst ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                   <div className="flex justify-between items-center text-body-md">
                     <span className="text-body">Jarak Tempuh</span>
                     <span className="font-medium">{estimasi.jarak_km.toFixed(1)} km</span>
@@ -274,6 +272,8 @@ export default function BuatPengiriman() {
                     </button>
                   </div>
                 </div>
+              ) : loadingEst ? (
+                <div className="text-body-md text-ink text-center py-8">Menghitung...</div>
               ) : null}
             </div>
           </div>

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../../lib/api';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { formatRupiah } from '../../../lib/format';
 
 export default function AdminPengiriman() {
   const [shipments, setShipments] = useState([]);
@@ -151,7 +152,7 @@ export default function AdminPengiriman() {
                     <div className="truncate text-body-sm" title={s.alamat_tujuan}><span className="font-medium text-mute">Ke:</span> {s.alamat_tujuan}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="font-bold text-ink">Rp{s.total_biaya?.toLocaleString('id-ID')}</div>
+                    <div className="font-bold text-ink">Rp{formatRupiah(s.total_biaya)}</div>
                     <div className="text-body-xs text-mute font-medium">{s.jarak_km} km</div>
                   </td>
                   <td className="px-6 py-4">

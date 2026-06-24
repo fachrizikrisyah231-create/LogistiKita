@@ -277,9 +277,9 @@ export default function AdminCabang() {
 
       {/* CRUD Modal Overlay */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-canvas rounded-xl shadow-lg border border-surface-pressed max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-surface-pressed">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-canvas rounded-xl shadow-lg border border-surface-pressed w-[90vw] max-w-[500px] max-h-[90vh] overflow-y-auto flex flex-col shrink-0">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-surface-pressed sticky top-0 bg-canvas z-10">
               <h2 className="text-display-sm font-bold">
                 {modalMode === 'add' ? 'Tambah Cabang Baru' : 'Edit Data Cabang'}
               </h2>

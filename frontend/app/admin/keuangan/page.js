@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../../lib/api';
 import StatCard from '../../../components/admin/StatCard';
+import { formatRupiah } from '../../../lib/format';
 import RevenueChart from '../../../components/admin/RevenueChart';
 import { Wallet, DollarSign, TrendingUp, Truck, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -74,10 +75,10 @@ export default function AdminKeuangan() {
       
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard title="Total Pendapatan" value={`Rp${keuangan.total_pendapatan?.toLocaleString('id-ID')}`} icon={<Wallet size={24} />} colorClass="bg-blue-50 text-blue-600" />
-        <StatCard title="Total Ongkir" value={`Rp${keuangan.total_ongkir?.toLocaleString('id-ID')}`} icon={<Truck size={24} />} colorClass="bg-indigo-50 text-indigo-600" />
-        <StatCard title="Total Fee Layanan (Untung)" value={`Rp${keuangan.total_fee?.toLocaleString('id-ID')}`} icon={<DollarSign size={24} />} colorClass="bg-green-50 text-green-600" />
-        <StatCard title="Rata-rata Ongkir / Paket" value={`Rp${Math.round(keuangan.rata_rata_ongkir || 0).toLocaleString('id-ID')}`} icon={<TrendingUp size={24} />} colorClass="bg-yellow-50 text-yellow-600" />
+        <StatCard title="Total Pendapatan" value={`Rp${formatRupiah(keuangan.total_pendapatan)}`} icon={<Wallet size={24} />} colorClass="bg-blue-50 text-blue-600" />
+        <StatCard title="Total Ongkir" value={`Rp${formatRupiah(keuangan.total_ongkir)}`} icon={<Truck size={24} />} colorClass="bg-indigo-50 text-indigo-600" />
+        <StatCard title="Total Fee Layanan (Untung)" value={`Rp${formatRupiah(keuangan.total_fee)}`} icon={<DollarSign size={24} />} colorClass="bg-green-50 text-green-600" />
+        <StatCard title="Rata-rata Ongkir / Paket" value={`Rp${formatRupiah(keuangan.rata_rata_ongkir)}`} icon={<TrendingUp size={24} />} colorClass="bg-yellow-50 text-yellow-600" />
       </div>
 
       {/* Charts Grid */}
@@ -165,11 +166,11 @@ export default function AdminKeuangan() {
                     </td>
                     <td className="px-6 py-4 font-bold">{t.order_id}</td>
                     <td className="px-6 py-4 font-bold text-ink">
-                      Rp{t.amount?.toLocaleString('id-ID')}
+                      Rp{formatRupiah(t.amount)}
                     </td>
                     <td className="px-6 py-4 text-body-sm text-mute">
-                      <div>Ongkir: Rp{t.ongkir?.toLocaleString('id-ID')}</div>
-                      <div>Fee (5%): Rp{t.fee_layanan?.toLocaleString('id-ID')}</div>
+                      <div>Ongkir: Rp{formatRupiah(t.ongkir)}</div>
+                      <div>Fee (5%): Rp{formatRupiah(t.fee_layanan)}</div>
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2.5 py-1 rounded text-xs font-bold ${

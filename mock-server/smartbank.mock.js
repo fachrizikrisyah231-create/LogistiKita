@@ -96,12 +96,10 @@ app.post('/payment', (req, res) => {
     if (errPayload) return respond(errPayload);
   }
 
-  // ── 2. Validasi: user harus ada ─────────────────────────────────
+  // ── 2. Validasi: user otomatis didaftarkan (khusus mock testing) ─────────────────────────────────
   if (!(from_user in state.balances)) {
-    return respond({
-      status: 'FAILED', error_code: 'USER_NOT_FOUND',
-      message: `User ${from_user} tidak terdaftar di SmartBank.`,
-    });
+    console.log(`[SmartBank] ⚠️ Auto-register user ${from_user} untuk keperluan testing.`);
+    state.balances[from_user] = SALDO_AWAL;
   }
 
   // ── 3. Cek cooldown ─────────────────────────────────────────────

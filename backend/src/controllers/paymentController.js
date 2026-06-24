@@ -17,7 +17,8 @@ const logger           = require('../utils/logger');
  * Middleware: authMiddleware
  */
 async function pembayaranLogistik(req, res) {
-  const { shipment_id, order_id, user_id, ongkir, fee_layanan, total_biaya } = req.body;
+  const { shipment_id, order_id, ongkir, fee_layanan, total_biaya } = req.body;
+  const user_id = req.user?.id || req.body.user_id;
 
   // ── Validasi ───────────────────────────────────────────────────
   if (!shipment_id) return respond.error(res, 'VALIDATION_ERROR', "Field 'shipment_id' wajib diisi.", 400);

@@ -15,6 +15,7 @@ import {
   Tooltip, 
   Legend 
 } from 'recharts';
+import { formatRupiah } from '../../lib/format';
 
 // Color definitions matching the design system and status badges
 const COLORS = {
@@ -48,7 +49,7 @@ export default function RevenueChart({ type, data }) {
   // ─── 1. LINE CHART (Overview: Tren Pengiriman) ──────────────────────
   if (type === 'line') {
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minHeight={250}>
         <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#efefef" />
           <XAxis 
@@ -107,7 +108,7 @@ export default function RevenueChart({ type, data }) {
   // ─── 2. DONUT / PIE CHART (Status & Tipe Pengiriman) ────────────────
   if (type === 'donut') {
     const getCellColor = (name, index) => {
-      const normalized = name.toLowerCase();
+      const normalized = (name || '').toLowerCase();
       // Match by normalized shipping type
       if (COLORS[normalized]) return COLORS[normalized];
       // Match by exact status key
@@ -120,7 +121,7 @@ export default function RevenueChart({ type, data }) {
     const total = data.reduce((sum, item) => sum + parseFloat(item.value || 0), 0);
 
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minHeight={250}>
         <PieChart>
           <Pie
             data={data}
@@ -163,7 +164,7 @@ export default function RevenueChart({ type, data }) {
   // ─── 3. AREA CHART (Keuangan: Tren Pendapatan) ──────────────────────
   if (type === 'area') {
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="99%" height="100%" minHeight={250}>
         <AreaChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
           <defs>
             <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -216,7 +217,7 @@ export default function RevenueChart({ type, data }) {
             }}
             formatter={(value, name) => {
               const labelName = name === 'revenue' ? 'Billed Revenue' : name === 'fee' ? 'Fee Keuntungan (5%)' : name === 'ongkir' ? 'Ongkir Kurir' : name;
-              return [`Rp${parseFloat(value).toLocaleString('id-ID')}`, labelName];
+              return [`Rp${formatRupiah(value)}`, labelName];
             }}
           />
           <Area 
