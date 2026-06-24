@@ -72,8 +72,11 @@ export default function PengirimanSaya() {
                       <div className="max-w-[200px] truncate" title={s.alamat_tujuan}>{s.alamat_tujuan}</div>
                     </div>
                     
-                    <div className="text-body-sm text-mute">
-                      Dibuat pada {new Date(s.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    <div className="text-body-sm text-mute space-y-1">
+                      <div>Dibuat pada {new Date(s.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                      {s.status === 'DELIVERED' && (
+                        <div>Selesai pada {new Date(s.updated_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                      )}
                     </div>
                   </div>
                   
