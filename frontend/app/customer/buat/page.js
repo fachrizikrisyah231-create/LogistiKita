@@ -56,14 +56,29 @@ export default function BuatPengiriman() {
     setErrorEst('');
     try {
       const { lat_asal, lng_asal, lat_tujuan, lng_tujuan, tipe_pengiriman } = form;
-      const res = await api.post('/estimasi-ongkir', {
+      // Langkah 1: Hitung Ongkir
+      const resBiaya = await api.post('/biaya_pengiriman', {
         lat_asal: parseFloat(lat_asal),
         lng_asal: parseFloat(lng_asal),
         lat_tujuan: parseFloat(lat_tujuan),
         lng_tujuan: parseFloat(lng_tujuan),
         tipe_pengiriman
       });
-      setEstimasi(res.data.data);
+      const ongkirData = resBiaya.data.data;
+      
+      // Langkah 2: Hitung Fee
+      const resFee = await api.post('/biaya_layanan_logistik', {
+        ongkir: ongkirData.ongkir
+      });
+      const feeData = resFee.data.data;
+
+      setEstimasi({
+        jarak_km: ongkirData.jarak_km,
+        tipe_pengiriman: ongkirData.tipe_pengiriman,
+        ongkir: feeData.ongkir,
+        fee_layanan: feeData.fee_layanan,
+        total_biaya: feeData.total_biaya
+      });
     } catch (err) {
       setEstimasi(null);
       setErrorEst(err.response?.data?.error?.message || 'Gagal menghitung estimasi');
@@ -86,11 +101,24 @@ export default function BuatPengiriman() {
         lng_tujuan: parseFloat(form.lng_tujuan),
         nilai_transaksi: 10000 // default dummy
       };
-      await api.post('/shipments/direct', payload);
-      alert('Pengiriman berhasil dibuat!');
+      // Langkah 1: Buat Pengiriman (Status PENDING)
+      const resShipment = await api.post('/shipments/direct', payload);
+      const shipmentData = resShipment.data.data;
+      
+      // Langkah 2: Bayar (Lempar tagihan ke SmartBank)
+      await api.post('/pembayaran_logistik', {
+        shipment_id: shipmentData.shipment_id,
+        order_id: shipmentData.order_id,
+        user_id: payload.user_id || 'usr-temp', // Backend middleware akan handle user_id dari JWT
+        ongkir: shipmentData.biaya.ongkir,
+        fee_layanan: shipmentData.biaya.fee_layanan,
+        total_biaya: shipmentData.biaya.total_biaya
+      });
+
+      alert('Pengiriman berhasil dibayar dan akan segera diproses!');
       router.push('/customer');
     } catch (err) {
-      alert(err.response?.data?.error?.message || 'Gagal membuat pengiriman');
+      alert(err.response?.data?.error?.message || 'Gagal membuat/membayar pengiriman');
     } finally {
       setSubmitting(false);
     }

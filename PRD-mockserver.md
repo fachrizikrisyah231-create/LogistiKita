@@ -55,7 +55,7 @@ Mock Server menyediakan **simulasi** layanan eksternal yang dibutuhkan LogistiKi
                     │   supplierhub   │
                     │   direct        │
                     └───────┬─────────┘
-                            │ POST /api/request-pengiriman (marketplace/supplierhub)
+                            │ POST /api/request_pengiriman (marketplace/supplierhub)
                             │ POST /api/pengiriman (direct)
                             ▼
                     ┌─────────────────┐
@@ -289,8 +289,8 @@ Port: **5500**
 ### 7.1 Fungsi
 
 Mensimulasikan **tiga sumber** pengiriman:
-1. **Marketplace** — POST ke LogistiKita `/request-pengiriman`
-2. **SupplierHub** — POST ke LogistiKita `/request-pengiriman`
+1. **Marketplace** — POST ke LogistiKita `/request_pengiriman`
+2. **SupplierHub** — POST ke LogistiKita `/request_pengiriman`
 3. **Direct User** — POST ke LogistiKita `/pengiriman` (simulasi user buat sendiri)
 
 ### 7.2 Endpoints
@@ -317,7 +317,7 @@ Generate JWT token, lalu POST ke LogistiKita backend:
 **Proses:**
 1. Generate JWT token untuk `user_id`
 2. Generate `order_id` unik (format: `MKT-YYYYMMDD-XXXX`)
-3. POST ke `http://localhost:3001/api/request-pengiriman` dengan:
+3. POST ke `http://localhost:3001/api/request_pengiriman` dengan:
    ```json
    {
      "order_id": "MKT-20260617-0001",
@@ -885,7 +885,7 @@ app.post('/trigger/marketplace', async (req, res) => {
       nilai_transaksi: nilai_transaksi || 0,
     };
 
-    const response = await fetch(`${BACKEND_URL}/api/request-pengiriman`, {
+    const response = await fetch(`${BACKEND_URL}/api/request_pengiriman`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -921,7 +921,7 @@ app.post('/trigger/supplierhub', async (req, res) => {
       nilai_transaksi: nilai_transaksi || 0,
     };
 
-    const response = await fetch(`${BACKEND_URL}/api/request-pengiriman`, {
+    const response = await fetch(`${BACKEND_URL}/api/request_pengiriman`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

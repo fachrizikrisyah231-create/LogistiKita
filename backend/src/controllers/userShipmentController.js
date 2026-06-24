@@ -38,8 +38,7 @@ class UserShipmentController {
       respond.success(res, 'Pengiriman berhasil dibuat dan sedang menunggu pembayaran.', {
         shipment_id: result.shipmentId,
         order_id: result.orderId,
-        payment_status: result.paymentStatus,
-        transaction_id: result.transactionId,
+        status: result.status,
         biaya: {
           ongkir: result.ongkir,
           fee_layanan: result.feeLayanan,

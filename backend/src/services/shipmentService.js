@@ -78,80 +78,16 @@ class ShipmentService {
     // Catat log
     await TrackingLog.insert(shipmentId, 'PENDING', 'Permintaan pengiriman diterima');
 
-    // 7. Proses pembayaran ke SmartBank
-    const paymentResult = await smartbankService.processPayment({
+    // 7. Selesai (Pembayaran dipisahkan ke paymentController)
+    return {
       shipmentId,
-      orderId: orderId,
-      userId: userId,
+      orderId,
+      status: 'PENDING',
       ongkir,
-      feeLay: fee_layanan,
+      feeLayanan: fee_layanan,
       totalBiaya: total_biaya,
-    });
-
-    if (paymentResult.success) {
-      const { transaction_id } = paymentResult.data;
-
-      // Assign kurir (random kurir untuk simulasi)
-      const [[kurir]] = await db.query('SELECT id FROM users WHERE role = "kurir" ORDER BY RAND() LIMIT 1');
-      const assignedKurirId = kurir ? kurir.id : null;
-
-      if (assignedKurirId) {
-        await db.query('UPDATE shipments SET assigned_kurir_id = ? WHERE id = ?', [assignedKurirId, shipmentId]);
-      }
-
-      await Shipment.updateStatus(orderId, 'PICKUP', transaction_id);
-      await TrackingLog.insert(shipmentId, 'PICKUP', 'Pembayaran ongkir berhasil, menunggu pickup');
-
-      await TransactionLog.insertSuccess({
-        shipment_id: shipmentId,
-        order_id: orderId,
-        user_id: userId,
-        amount: total_biaya,
-        ongkir,
-        fee_layanan,
-        transaction_id,
-        smartbank_payload: paymentResult.data,
-        smartbank_response: paymentResult.data,
-      });
-
-      return {
-        shipmentId,
-        orderId,
-        paymentStatus: 'SUCCESS',
-        transactionId: transaction_id,
-        ongkir,
-        feeLayanan: fee_layanan,
-        totalBiaya: total_biaya
-      };
-    } else {
-      const errData = paymentResult.error;
-      const newStatus = errData.is_system_error ? 'PENDING' : 'FAILED';
-      await Shipment.updateStatus(orderId, newStatus);
-      await TrackingLog.insert(
-        shipmentId,
-        newStatus,
-        errData.is_system_error
-          ? 'Pembayaran tertunda: SmartBank down'
-          : `Pembayaran gagal: ${errData.error_code}`
-      );
-
-      await TransactionLog.insertFailure({
-        shipment_id: shipmentId,
-        order_id: orderId,
-        user_id: userId,
-        amount: total_biaya,
-        ongkir,
-        fee_layanan,
-        error_code: errData.error_code,
-        error_message: errData.message,
-        smartbank_payload: { orderId, shipmentId, total_biaya },
-        smartbank_response: errData,
-      });
-
-      const err = new Error(errData.message || 'Pembayaran gagal');
-      err.status = errData.is_system_error ? 503 : (['INSUFFICIENT_BALANCE', 'USER_NOT_FOUND'].includes(errData.error_code) ? 402 : 400);
-      throw err;
-    }
+      message: 'Permintaan pengiriman diterima. Silakan lanjutkan ke proses pembayaran logistik.'
+    };
   }
 }
 

@@ -12,6 +12,8 @@ const trackingController = require('../controllers/trackingController');
 const userShipmentController = require('../controllers/userShipmentController');
 const kurirController = require('../controllers/kurirController');
 const adminController = require('../controllers/adminController');
+const paymentController = require('../controllers/paymentController');
+const feeController = require('../controllers/feeController');
 
 const router = express.Router();
 
@@ -21,9 +23,11 @@ router.post('/auth/login', authController.login);
 router.get('/auth/me', authMiddleware, authController.me);
 
 // ── Shipment Request (Integrasi & Publik) ────────────────────────────
-router.post('/request-pengiriman', authMiddleware, rateLimitMiddleware, shipmentController.create);
-router.post('/estimasi-ongkir', authMiddleware, costController.estimasiBiaya);
-router.get('/tracking/:order_id', trackingController.getTracking); // Tanpa login
+router.post('/request_pengiriman', authMiddleware, rateLimitMiddleware, shipmentController.create);
+router.post('/biaya_pengiriman', authMiddleware, costController.biayaPengiriman);
+router.post('/biaya_layanan_logistik', authMiddleware, feeController.hitungBiayaLayanan);
+router.post('/pembayaran_logistik', authMiddleware, paymentController.pembayaranLogistik);
+router.get('/tracking_status/:order_id', trackingController.getTracking); // Tanpa login
 
 const Branch = require('../models/Branch');
 router.get('/cabang', async (req, res) => {

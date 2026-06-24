@@ -21,7 +21,7 @@ export default function TrackingPage() {
     }
 
     try {
-      const trackingRes = await api.get(`/tracking/${orderId}`);
+      const trackingRes = await api.get(`/tracking_status/${orderId}`);
       const data = trackingRes.data.data;
       
       const mappedData = {

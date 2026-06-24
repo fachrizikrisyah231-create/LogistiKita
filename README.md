@@ -367,8 +367,8 @@ digraph LogistiKita_Architecture {
             fillcolor="#EBF5FB";
             API_Auth [label="POST /auth/login\nPOST /auth/register", fillcolor="#D6EAF8"];
             API_Pengiriman [label="POST /pengiriman\n[USER: buat pengiriman]", fillcolor="#D5F5E3"];
-            API_Request [label="POST /request-pengiriman\n[AUTO: dari Marketplace/Supplier]", fillcolor="#D6EAF8"];
-            API_Tracking [label="GET /tracking/:order_id\n[PUBLIC: tanpa login]", fillcolor="#D5F5E3"];
+            API_Request [label="POST /request_pengiriman\n[AUTO: dari Marketplace/Supplier]", fillcolor="#D6EAF8"];
+            API_Tracking [label="GET /tracking_status/:order_id\n[PUBLIC: tanpa login]", fillcolor="#D5F5E3"];
             API_Kurir [label="Kurir Endpoints\n[KURIR: pickup, tiba, antar]", fillcolor="#F9E79F"];
             API_Admin [label="Admin Endpoints\n[ADMIN: overview, keuangan, dsb]", fillcolor="#F5B7B1"];
             API_Bayar [label="POST /pembayaran_logistik\n[AUTO: kirim ke SmartBank]", fillcolor="#D6EAF8"];
@@ -622,9 +622,9 @@ Content-Type: application/json
 | GET | `/api/auth/me` | semua role | Info user yang login |
 | POST | `/api/pengiriman` | customer | Buat pengiriman baru |
 | GET | `/api/pengiriman-saya` | customer | Daftar pengiriman user |
-| POST | `/api/request-pengiriman` | — (via Gateway) | Request dari Marketplace/SupplierHub |
-| POST | `/api/estimasi-ongkir` | — | Estimasi biaya pengiriman |
-| GET | `/api/tracking/:order_id` | — | Lacak paket (publik) |
+| POST | `/api/request_pengiriman` | — (via Gateway) | Request dari Marketplace/SupplierHub |
+| POST | `/api/biaya_pengiriman` | — | Estimasi biaya pengiriman |
+| GET | `/api/tracking_status/:order_id` | — | Lacak paket (publik) |
 | GET | `/api/cabang/list` | — | Daftar semua cabang |
 | GET | `/api/kurir/tugas` | kurir | Tugas aktif kurir |
 | GET | `/api/kurir/riwayat` | kurir | Riwayat pengiriman kurir |
@@ -789,7 +789,7 @@ Content-Type: application/json
 }
 ```
 
-#### `POST /api/estimasi-ongkir`
+#### `POST /api/biaya_pengiriman`
 
 **Auth:** Tidak perlu
 
@@ -808,7 +808,7 @@ Content-Type: application/json
 
 ### 9.4 Detail Contract — Request dari App Lain
 
-#### `POST /api/request-pengiriman`
+#### `POST /api/request_pengiriman`
 
 **Auth:** JWT (via API Gateway)
 
@@ -833,7 +833,7 @@ Content-Type: application/json
 
 ### 9.5 Detail Contract — Tracking (Publik)
 
-#### `GET /api/tracking/:order_id`
+#### `GET /api/tracking_status/:order_id`
 
 **Auth:** Tidak perlu
 

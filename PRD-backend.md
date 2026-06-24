@@ -77,9 +77,9 @@
 │  PENGIRIMAN:                                                    │
 │  │  POST /pengiriman         →  userShipmentController         │
 │  │  GET  /pengiriman-saya    →  userShipmentController         │
-│  │  POST /request-pengiriman →  shipmentController             │
-│  │  POST /estimasi-ongkir    →  costController                 │
-│  │  GET  /tracking/:order_id →  trackingController (PUBLIC)    │
+│  │  POST /request_pengiriman →  shipmentController             │
+│  │  POST /biaya_pengiriman    →  costController                 │
+│  │  GET  /tracking_status/:order_id →  trackingController (PUBLIC)    │
 │                                                                 │
 │  KURIR:                                                         │
 │  │  GET  /kurir/tugas        →  kurirController                │
@@ -112,10 +112,10 @@ backend/
 ├── src/
 │   ├── controllers/
 │   │   ├── authController.js            # Login, register, me
-│   │   ├── shipmentController.js        # POST /request-pengiriman (dari app lain)
+│   │   ├── shipmentController.js        # POST /request_pengiriman (dari app lain)
 │   │   ├── userShipmentController.js    # POST /pengiriman, GET /pengiriman-saya (user langsung)
-│   │   ├── trackingController.js        # GET /tracking/:order_id (publik)
-│   │   ├── costController.js            # POST /estimasi-ongkir
+│   │   ├── trackingController.js        # GET /tracking_status/:order_id (publik)
+│   │   ├── costController.js            # POST /biaya_pengiriman
 │   │   ├── feeController.js             # Kalkulasi fee layanan (internal)
 │   │   ├── paymentController.js         # Pembayaran ke SmartBank (internal)
 │   │   ├── kurirController.js           # Semua endpoint kurir
@@ -269,8 +269,8 @@ router.post('/api/auth/login', authController.login);
 router.get('/api/auth/me', authMiddleware, authController.me);
 
 // Public endpoints
-router.get('/api/tracking/:order_id', trackingController.getTracking);
-router.post('/api/estimasi-ongkir', costController.estimasi);
+router.get('/api/tracking_status/:order_id', trackingController.getTracking);
+router.post('/api/biaya_pengiriman', costController.estimasi);
 router.get('/api/cabang/list', branchController.list);
 
 // Customer endpoints
@@ -278,7 +278,7 @@ router.post('/api/pengiriman', authMiddleware, roleMiddleware('customer'), rateL
 router.get('/api/pengiriman-saya', authMiddleware, roleMiddleware('customer'), userShipmentController.list);
 
 // API trigger (from Marketplace/SupplierHub)
-router.post('/api/request-pengiriman', authMiddleware, rateLimitMiddleware, shipmentController.create);
+router.post('/api/request_pengiriman', authMiddleware, rateLimitMiddleware, shipmentController.create);
 
 // Kurir endpoints
 router.get('/api/kurir/tugas', authMiddleware, roleMiddleware('kurir'), kurirController.getTugas);
@@ -321,9 +321,9 @@ router.get('/api/admin/kurir', authMiddleware, roleMiddleware('admin'), adminCon
 | 3 | GET | `/api/auth/me` | JWT | any | Info user login |
 | 4 | POST | `/api/pengiriman` | JWT | customer | Buat pengiriman (user) |
 | 5 | GET | `/api/pengiriman-saya` | JWT | customer | List pengiriman user |
-| 6 | POST | `/api/request-pengiriman` | JWT | — | Request dari app lain |
-| 7 | POST | `/api/estimasi-ongkir` | ❌ | — | Estimasi ongkir |
-| 8 | GET | `/api/tracking/:order_id` | ❌ | — | Tracking publik |
+| 6 | POST | `/api/request_pengiriman` | JWT | — | Request dari app lain |
+| 7 | POST | `/api/biaya_pengiriman` | ❌ | — | Estimasi ongkir |
+| 8 | GET | `/api/tracking_status/:order_id` | ❌ | — | Tracking publik |
 | 9 | GET | `/api/cabang/list` | ❌ | — | List cabang |
 | 10 | GET | `/api/kurir/tugas` | JWT | kurir | Tugas aktif |
 | 11 | GET | `/api/kurir/riwayat` | JWT | kurir | Riwayat selesai |
@@ -636,7 +636,7 @@ POST /api/pengiriman
 ### 11.4 Tracking (Publik)
 
 ```
-GET /api/tracking/:order_id
+GET /api/tracking_status/:order_id
   │
   ▼
 [1] Validasi order_id tidak kosong
@@ -748,13 +748,13 @@ GET /api/admin/keuangan
 
 ### Pengiriman (API)
 
-- [ ] Menerima request dari Marketplace/SupplierHub via `POST /request-pengiriman`
+- [ ] Menerima request dari Marketplace/SupplierHub via `POST /request_pengiriman`
 - [ ] Default tipe = reguler jika tidak dikirim
 - [ ] Duplikat order_id ditolak
 
 ### Tracking
 
-- [ ] `GET /tracking/:order_id` tidak memerlukan JWT
+- [ ] `GET /tracking_status/:order_id` tidak memerlukan JWT
 - [ ] Menampilkan rute cabang + status arrived/departed per cabang
 - [ ] Menampilkan riwayat status lengkap
 

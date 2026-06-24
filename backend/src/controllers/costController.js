@@ -5,7 +5,7 @@ const { hitungSemuaBiaya } = require('../services/costCalculatorService');
 const respond = require('../utils/responseHelper');
 
 class CostController {
-  async estimasiBiaya(req, res) {
+  async biayaPengiriman(req, res) {
     const { lat_asal, lng_asal, lat_tujuan, lng_tujuan, tipe_pengiriman } = req.body;
 
     if (lat_asal === undefined || lng_asal === undefined || lat_tujuan === undefined || lng_tujuan === undefined || !tipe_pengiriman) {
@@ -27,10 +27,10 @@ class CostController {
 
       const biaya = hitungSemuaBiaya(jarakKm, tipe_pengiriman);
 
-      respond.success(res, 'Estimasi biaya', {
+      respond.success(res, 'Estimasi biaya pengiriman', {
         jarak_km: jarakKm,
         tipe_pengiriman,
-        ...biaya
+        ongkir: biaya.ongkir
       });
     } catch (err) {
       respond.error(res, 'CALCULATION_FAILED', err.message, 500);

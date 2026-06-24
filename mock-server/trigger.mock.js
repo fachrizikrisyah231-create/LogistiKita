@@ -73,18 +73,50 @@ async function sendToLogistikita(body, sourceApp) {
   const token = generateToken(body.user_id);
   const payload = { ...body, source_app: sourceApp };
 
-  return axios.post(
-    `${LOGISTIKITA_URL}/logistikita/request_pengiriman`,
-    payload,
-    {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type':  'application/json',
+  try {
+    // Langkah 1: Request Pengiriman (PENDING)
+    const reqRes = await axios.post(
+      `${LOGISTIKITA_URL}/api/request_pengiriman`,
+      payload,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type':  'application/json',
+        },
+        timeout: 20000,
+        validateStatus: () => true,
+      }
+    );
+
+    if (reqRes.status !== 201) return reqRes; // Return jika gagal membuat PENDING
+
+    const reqData = reqRes.data.data;
+
+    // Langkah 2: Pembayaran Logistik (PICKUP)
+    const payRes = await axios.post(
+      `${LOGISTIKITA_URL}/api/pembayaran_logistik`,
+      {
+        shipment_id: reqData.shipmentId,
+        order_id: reqData.orderId,
+        user_id: body.user_id,
+        ongkir: reqData.ongkir,
+        fee_layanan: reqData.feeLayanan,
+        total_biaya: reqData.totalBiaya
       },
-      timeout: 20000,
-      validateStatus: () => true, // Jangan throw untuk 4xx/5xx — kita teruskan apa adanya
-    }
-  );
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type':  'application/json',
+        },
+        timeout: 20000,
+        validateStatus: () => true,
+      }
+    );
+
+    return payRes;
+  } catch (err) {
+    throw err;
+  }
 }
 
 // ─── POST /trigger/marketplace ────────────────────────────────────────
