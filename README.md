@@ -311,100 +311,72 @@ PENDING → PICKUP → IN_TRANSIT ⇄ AT_BRANCH → OUT_FOR_DELIVERY → DELIVER
 
 ## 7. Diagram Arsitektur
 
-```dot
-digraph LogistiKita_Architecture {
-    rankdir=TB;
-    fontname="Arial";
-    node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11];
-    edge [fontname="Arial", fontsize=10];
+```mermaid
+flowchart TB
+    %% External Actors
+    subgraph External["External Services (Pemicu Otomatis)"]
+        Marketplace["Marketplace\n(PasarKita)"]
+        SupplierHub["SupplierHub"]
+    end
 
-    // === EXTERNAL ACTORS ===
-    subgraph cluster_external {
-        label="External Services (Pemicu Otomatis)";
-        style=dashed;
-        color="#888888";
-        Marketplace [label="Marketplace\n(PasarKita)", fillcolor="#AED6F1"];
-        SupplierHub [label="SupplierHub", fillcolor="#AED6F1"];
-    }
+    %% User Actors
+    subgraph Users["User Actors"]
+        Customer["Customer\n(Buat Pengiriman)"]
+        Kurir["Kurir\n(Pickup & Delivery)"]
+        Admin["Admin\n(Kelola Sistem)"]
+    end
 
-    // === USER ACTORS ===
-    subgraph cluster_users {
-        label="User Actors";
-        style=dashed;
-        color="#888888";
-        Customer [label="Customer\n(Buat Pengiriman)", fillcolor="#ABEBC6"];
-        Kurir [label="Kurir\n(Pickup & Delivery)", fillcolor="#F9E79F"];
-        Admin [label="Admin\n(Kelola Sistem)", fillcolor="#F5B7B1"];
-    }
+    %% API Gateway
+    Gateway{"API Gateway / Integrator\n(JWT Validation + Routing + Fee 0.5%)"}
 
-    // === API GATEWAY ===
-    Gateway [label="API Gateway / Integrator\n(JWT Validation + Routing + Fee 0.5%)",
-             shape=diamond, fillcolor="#F9E79F", style="filled"];
+    %% LogistiKita Service
+    subgraph LogistiKita["LogistiKita Service (Node.js + Express)"]
+        subgraph Frontend["Frontend (Next.js + React)"]
+            UI_Landing["Landing Page\n(/)"]
+            UI_Login["Login & Register\n(/login, /register)"]
+            UI_Pengiriman["Buat Pengiriman\n(/buat-pengiriman)"]
+            UI_PengirimanSaya["Pengiriman Saya\n(/pengiriman-saya)"]
+            UI_Tracking["Tracking (tanpa login)\n(/tracking)"]
+            UI_Kurir["Dashboard Kurir\n(/dashboard/kurir)"]
+            UI_Admin["Dashboard Admin\n(/admin/*)"]
+        end
 
-    // === LOGISTIKITA SERVICE ===
-    subgraph cluster_logistikita {
-        label="LogistiKita Service (Node.js + Express)";
-        style=filled;
-        color="#D5F5E3";
-        fillcolor="#EAFAF1";
+        subgraph Backend["Backend API"]
+            API_Auth["POST /auth/login\nPOST /auth/register"]
+            API_Pengiriman["POST /pengiriman\n[USER: buat pengiriman]"]
+            API_Request["POST /request_pengiriman\n[AUTO: dari Marketplace/Supplier]"]
+            API_Tracking["GET /tracking_status/:order_id\n[PUBLIC: tanpa login]"]
+            API_Kurir["Kurir Endpoints\n[KURIR: pickup, tiba, antar]"]
+            API_Admin["Admin Endpoints\n[ADMIN: overview, keuangan, dsb]"]
+            API_Bayar["POST /pembayaran_logistik\n[AUTO: kirim ke SmartBank]"]
+        end
 
-        subgraph cluster_frontend {
-            label="Frontend (Next.js + React)";
-            style=filled;
-            fillcolor="#FEF9E7";
-            UI_Landing [label="Landing Page\n(/)", fillcolor="#FDEBD0"];
-            UI_Login [label="Login & Register\n(/login, /register)", fillcolor="#FDEBD0"];
-            UI_Pengiriman [label="Buat Pengiriman\n(/buat-pengiriman)", fillcolor="#FDEBD0"];
-            UI_PengirimanSaya [label="Pengiriman Saya\n(/pengiriman-saya)", fillcolor="#FDEBD0"];
-            UI_Tracking [label="Tracking (tanpa login)\n(/tracking)", fillcolor="#FDEBD0"];
-            UI_Kurir [label="Dashboard Kurir\n(/dashboard/kurir)", fillcolor="#FDEBD0"];
-            UI_Admin [label="Dashboard Admin\n(/admin/*)", fillcolor="#FDEBD0"];
-        }
+        subgraph Database["Database (MySQL)"]
+            DB[("MySQL\nusers | shipments | branches\nshipment_routes | tracking_logs\ntransaction_logs")]
+        end
+    end
 
-        subgraph cluster_backend {
-            label="Backend API";
-            style=filled;
-            fillcolor="#EBF5FB";
-            API_Auth [label="POST /auth/login\nPOST /auth/register", fillcolor="#D6EAF8"];
-            API_Pengiriman [label="POST /pengiriman\n[USER: buat pengiriman]", fillcolor="#D5F5E3"];
-            API_Request [label="POST /request_pengiriman\n[AUTO: dari Marketplace/Supplier]", fillcolor="#D6EAF8"];
-            API_Tracking [label="GET /tracking_status/:order_id\n[PUBLIC: tanpa login]", fillcolor="#D5F5E3"];
-            API_Kurir [label="Kurir Endpoints\n[KURIR: pickup, tiba, antar]", fillcolor="#F9E79F"];
-            API_Admin [label="Admin Endpoints\n[ADMIN: overview, keuangan, dsb]", fillcolor="#F5B7B1"];
-            API_Bayar [label="POST /pembayaran_logistik\n[AUTO: kirim ke SmartBank]", fillcolor="#D6EAF8"];
-        }
+    %% SMARTBANK
+    SmartBank["SmartBank (Core)\nPOST /payment\n(Validasi Saldo + Debit/Kredit + Ledger)"]
 
-        subgraph cluster_db {
-            label="Database (MySQL)";
-            style=filled;
-            fillcolor="#FDEDEC";
-            DB [label="MySQL\nusers | shipments | branches\nshipment_routes | tracking_logs\ntransaction_logs", shape=cylinder, fillcolor="#FADBD8"];
-        }
-    }
-
-    // === SMARTBANK ===
-    SmartBank [label="SmartBank (Core)\nPOST /payment\n(Validasi Saldo + Debit/Kredit + Ledger)",
-               fillcolor="#EBDEF0", style="filled"];
-
-    // === FLOWS ===
-    Marketplace -> Gateway [label="trigger setelah\ncheckout sukses"];
-    SupplierHub -> Gateway [label="trigger setelah\norder bahan sukses"];
-    Customer -> UI_Pengiriman [label="buat pengiriman\nvia UI"];
-    Customer -> UI_Tracking [label="lacak paket"];
-    Kurir -> UI_Kurir [label="pickup, transit,\ndelivery"];
-    Admin -> UI_Admin [label="kelola sistem"];
-    Gateway -> API_Request [label="forward request\n(JWT valid)"];
-    UI_Pengiriman -> API_Pengiriman [label="POST pengiriman"];
-    API_Request -> API_Bayar [label="hitung ongkir\n+ proses bayar"];
-    API_Pengiriman -> API_Bayar [label="hitung ongkir\n+ proses bayar"];
-    API_Bayar -> Gateway [label="POST /logistics/pay"];
-    Gateway -> SmartBank [label="forward payment"];
-    SmartBank -> Gateway [label="status transaksi"];
-    Gateway -> API_Bayar [label="callback status"];
-    API_Bayar -> DB [label="update shipment\n+ tracking log"];
-    API_Tracking -> DB [label="baca status"];
-    API_Kurir -> DB [label="update status paket"];
-}
+    %% FLOWS
+    Marketplace -->|"trigger setelah\ncheckout sukses"| Gateway
+    SupplierHub -->|"trigger setelah\norder bahan sukses"| Gateway
+    Customer -->|"buat pengiriman\nvia UI"| UI_Pengiriman
+    Customer -->|"lacak paket"| UI_Tracking
+    Kurir -->|"pickup, transit,\ndelivery"| UI_Kurir
+    Admin -->|"kelola sistem"| UI_Admin
+    Gateway -->|"forward request\n(JWT valid)"| API_Request
+    UI_Pengiriman -->|"POST pengiriman"| API_Pengiriman
+    API_Request -->|"hitung ongkir\n+ proses bayar"| API_Bayar
+    API_Pengiriman -->|"hitung ongkir\n+ proses bayar"| API_Bayar
+    API_Bayar -->|"POST /logistics/pay"| Gateway
+    Gateway -->|"forward payment"| SmartBank
+    SmartBank -->|"status transaksi"| Gateway
+    Gateway -->|"callback status"| API_Bayar
+    API_Bayar -->|"update shipment\n+ tracking log"| DB
+    API_Tracking -->|"baca status"| DB
+    API_Kurir -->|"update status paket"| DB
 ```
 
 ---
