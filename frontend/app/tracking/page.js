@@ -1,17 +1,27 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import TrackingForm from "@/components/tracking/TrackingForm";
 import TrackingTimeline from "@/components/tracking/TrackingTimeline";
 import ShipmentSummary from "@/components/tracking/ShipmentSummary";
 import BranchRouteProgress from "@/components/tracking/BranchRouteProgress";
 import api from "@/lib/api";
 
-export default function TrackingPage() {
+function TrackingContent() {
+  const searchParams = useSearchParams();
+  const initialOrderId = searchParams.get('order_id');
+  
   const [loading, setLoading] = useState(false);
   const [trackingData, setTrackingData] = useState(null);
   const [error, setError] = useState("");
   const [activeOrderId, setActiveOrderId] = useState("");
+
+  useEffect(() => {
+    if (initialOrderId && !activeOrderId && !trackingData) {
+      handleTrack(initialOrderId);
+    }
+  }, [initialOrderId]);
 
   const fetchTrackingData = useCallback(async (orderId, isInitial = false) => {
     if (isInitial) {
@@ -75,7 +85,7 @@ export default function TrackingPage() {
 
       <section className="flex-grow px-3xl pb-3xl">
         <div className="max-w-[1280px] mx-auto">
-          <TrackingForm onTrack={handleTrack} />
+          <TrackingForm onTrack={handleTrack} initialOrderId={initialOrderId || activeOrderId || ""} />
 
           <div className="mt-3xl pt-xl max-w-[1024px] mx-auto">
             {loading && (
@@ -129,5 +139,13 @@ export default function TrackingPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function TrackingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-body-md text-mute">Memuat pelacakan...</div>}>
+      <TrackingContent />
+    </Suspense>
   );
 }

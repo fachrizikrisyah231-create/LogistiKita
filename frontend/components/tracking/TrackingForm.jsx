@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-export default function TrackingForm({ onTrack }) {
-  const [orderId, setOrderId] = useState("");
+export default function TrackingForm({ onTrack, initialOrderId = "" }) {
+  const [orderId, setOrderId] = useState(initialOrderId);
+
+  useEffect(() => {
+    if (initialOrderId && !orderId) {
+      setOrderId(initialOrderId);
+    }
+  }, [initialOrderId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
