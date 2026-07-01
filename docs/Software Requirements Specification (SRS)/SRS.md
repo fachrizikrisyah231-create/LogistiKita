@@ -263,6 +263,7 @@ UI dikembangkan dengan Next.js dan Tailwind CSS, difokuskan pada pengoperasian a
 | `/api/biaya_pengiriman` | POST | Publik / Frontend | *Endpoint open* penyedia parameter perhitungan jarak (*distance calculation*) dan estimasi ongkir interaktif. |
 | `/api/tracking_status/:order_id` | GET | Publik / Frontend | Memberikan data histori paket secara lengkap (*read-only*) berdasarkan Resi/ID pesanan tanpa butuh *login*. |
 | `/api/kurir/shipments/:id/status/*` | PUT | Kurir (UI) | Rangkaian mutasi state pada siklus pengiriman (seperti `/pickup` atau `/tiba-cabang`) yang diiringi pemutakhiran titik transit. |
+| `/api/biaya_layanan_logistik` | POST | Internal Sistem | Mengkalkulasi nilai *fee* operasional 5% (LogistiKita) dari total estimasi ongkir murni. |
 | `/api/pembayaran_logistik` | POST | Internal Sistem | Sinkronisasi internal API guna menangkap persetujuan pemotongan saldo / tagihan finansial kepada *SmartBank Gateway*. |
 
 ### 7.3 Data Exchange Contract
