@@ -60,6 +60,41 @@ Dokumen ini tidak menspesifikasikan mekanisme pembayaran atau pengelolaan saldo 
 ### 2.1 Product Perspective
 Aplikasi ini menempati posisi sebagai layanan logistik dalam ekosistem UMKM. Secara teknis, aplikasi LogistiKita dibagi menjadi frontend dan backend yang berdiri sendiri, dengan database MySQL khusus logistik. LogistiKita terintegrasi dengan API Gateway untuk validasi JWT dan meneruskan permintaan pembayaran ke SmartBank. Marketplace dan SupplierHub memanggil LogistiKita secara otomatis melalui API Gateway.
 
+**Konteks Sistem LogistiKita**
+
+```mermaid
+graph LR
+    Customer["Customer<br>buat pesanan, lacak paket"]
+    Kurir["Kurir<br>update status pengiriman"]
+    Admin["Admin<br>kelola operasional, laporan"]
+    Marketplace["Marketplace / SupplierHub<br>integrasi order otomatis"]
+
+    LogistiKita["Platform LogistiKita<br>manajemen pengiriman, kalkulasi ongkir"]
+
+    SmartBank["SmartBank / API Gateway<br>validasi JWT, potong saldo"]
+    Database["Database MySQL<br>users, shipments, cabang, logs"]
+
+    Customer -- akses --> LogistiKita
+    Kurir -- akses --> LogistiKita
+    Admin -- kelola --> LogistiKita
+    Marketplace -- request API --> LogistiKita
+
+    LogistiKita -- request bayar --> SmartBank
+    LogistiKita -- simpan / baca --> Database
+
+    classDef main fill:#e0f2fe,stroke:#2563eb,stroke-width:2px;
+    classDef actor fill:#f3e8ff,stroke:#7c3aed,stroke-width:1px;
+    classDef ext fill:#fffbeb,stroke:#d97706,stroke-width:1px;
+    classDef db fill:#dcfce7,stroke:#16a34a,stroke-width:1px;
+
+    class LogistiKita main;
+    class Customer,Kurir,Admin,Marketplace actor;
+    class SmartBank ext;
+    class Database db;
+```
+
+*Gambar 1. Konteks sistem LogistiKita*
+
 ### 2.2 User Classes dan Karakteristik
 Sistem melayani beberapa kelas pengguna dengan hak dan ekspektasi yang berbeda. 
 
@@ -92,21 +127,76 @@ Alur pengiriman dapat berasal dari dua sumber:
 
 Dalam proses pengiriman, kurir akan memperbarui status (Pickup -> In Transit -> At Branch -> Out for Delivery -> Delivered).
 
+**Alur Data Pengiriman LogistiKita**
+
+```mermaid
+---
+title: Alur Data dan Operasional LogistiKita
+---
+graph LR
+    A["1. Order Masuk<br>via Marketplace / Customer"]
+    B["2. Kalkulasi Biaya<br>hitung jarak & ongkir"]
+    C["3. Pembayaran<br>potong saldo SmartBank"]
+    D["4. Alokasi Rute<br>tentukan cabang transit"]
+    E["5. Update Status<br>kurir pickup & antar"]
+    F["6. Selesai<br>paket DELIVERED"]
+
+    V["Validasi Sistem<br>tolak jarak berlebih"]
+    M["Monitoring Publik<br>riwayat log & dashboard"]
+
+    A --> B --> C --> D --> E --> F
+    
+    B -- aturan bisnis --> V
+    E -- data pelacakan --> M
+
+    classDef step1 fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#0f172a
+    classDef step2 fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#0f172a
+    classDef step3 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0f172a
+    classDef step4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a
+    classDef step5 fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#0f172a
+    classDef step6 fill:#f8fafc,stroke:#475569,stroke-width:2px,color:#0f172a
+    
+    classDef branch1 fill:#fff1f2,stroke:#e11d48,stroke-width:2px,color:#0f172a
+    classDef branch2 fill:#f5f3ff,stroke:#7c3aed,stroke-width:2px,color:#0f172a
+
+    class A step1
+    class B step2
+    class C step3
+    class D step4
+    class E step5
+    class F step6
+    
+    class V branch1
+    class M branch2
+```
+
+*Gambar 2. Alur data dari pesanan masuk hingga paket diterima beserta pelacakan riwayat.*
+
+**Penjelasan Tambahan:**
+- **Order Masuk**: Tahap awal ketika data pesanan dikirim dari Marketplace melalui API atau dari *form* pelanggan.
+- **Kalkulasi Biaya & Validasi**: Sistem menghitung ongkos kirim secara internal. Jika pesanan *Sameday* >50km atau *Nextday* >250km, alur akan dialihkan ke blok *Validasi Sistem* dan pesanan digagalkan.
+- **Pembayaran**: LogistiKita terhubung dengan API SmartBank untuk mengamankan biaya logistik.
+- **Alokasi Rute & Update Status**: Ketika pesanan dibayar, sistem membangun urutan cabang operasional. Kurir kemudian memperbarui status pengiriman dari awal hingga *Delivered*.
+- **Monitoring Publik**: Setiap transisi status dikirim ke *tracking log*, yang bisa dimanfaatkan publik untuk melacak riwayat paket serta dipantau di *dashboard* admin.
+
 ---
 
 ## 4. Domain Data dan Aturan Bisnis
 
 ### 4.1 Core Domain Entities
 
-| Entitas | Deskripsi | Field Penting |
-| --- | --- | --- |
-| users | Data pengguna LogistiKita. | `id`, `name`, `email`, `password`, `role` |
-| shipments | Data utama paket pengiriman. | `shipment_id`, `order_id`, `tipe_pengiriman`, `jarak_km`, `ongkir`, `fee_layanan`, `status` |
-| branches | Referensi cabang transit logistik. | `id`, `name`, `city`, `lat`, `lng`, `route_order` |
-| shipment_routes | Rute transit yang harus dilewati paket. | `shipment_id`, `branch_id`, `sequence`, `arrived_at`, `departed_at` |
-| tracking_logs | Catatan riwayat status paket. | `shipment_id`, `status`, `notes`, `created_at` |
+| Entitas | Deskripsi | Field Penting | Catatan Ownership |
+| --- | --- | --- | --- |
+| users | Data pengguna internal dan pelanggan LogistiKita. | `id`, `name`, `email`, `password`, `role`, `branch_id` | Akun dikelola langsung oleh LogistiKita secara lokal. Akun kurir dibuat oleh admin, sedangkan kustomer dapat mendaftar mandiri. |
+| shipments | Data utama pesanan dan paket pengiriman. | `shipment_id`, `order_id`, `tipe_pengiriman`, `jarak_km`, `ongkir`, `fee_layanan`, `status` | Dibuat saat pesanan masuk (Marketplace/Form). Kepemilikan mutlak pada LogistiKita sebagai *system of record* status paket. |
+| branches | Referensi letak titik cabang transit logistik. | `id`, `name`, `city`, `lat`, `lng`, `route_order` | Dikelola secara eksklusif oleh fungsi *Admin* LogistiKita. |
+| shipment_routes | Rute transit yang dibentuk untuk panduan perjalanan. | `shipment_id`, `branch_id`, `sequence`, `arrived_at`, `departed_at` | Dihasilkan oleh sistem setelah pembayaran lunas. Waktu *arrived/departed* diperbarui oleh interaksi sistem dan aksi *Kurir*. |
+| tracking_logs | Catatan riwayat transisi status paket (timeline). | `shipment_id`, `status`, `keterangan`, `branch_id`, `created_at` | Ditulis secara *append-only* oleh *trigger* perubahan status. Bersifat *read-only* untuk dikonsumsi publik/kustomer. |
+| transaction_logs | Histori komunikasi finansial dengan API eksternal. | `shipment_id`, `amount`, `transaction_id`, `status`, `error_code` | Disimpan oleh sistem setiap memanggil *API SmartBank*. Esensial untuk rekonsiliasi keuangan dan audit *fee* operasional. |
 
 ### 4.2 Business Rules
+
+Aturan bisnis berikut adalah *constraint* operasional yang harus dipenuhi agar aplikasi tidak menyimpang dari batasan logika perhitungan biaya dan pembagian tanggung jawab finansial di ekosistem simulasi UMKM LogistiKita.
 
 | ID | Aturan Bisnis | Dampak Implementasi |
 | --- | --- | --- |
@@ -118,6 +208,8 @@ Dalam proses pengiriman, kurir akan memperbarui status (Pickup -> In Transit -> 
 ---
 
 ## 5. Kebutuhan Fungsional
+
+Kebutuhan fungsional ditulis dalam bentuk *shall statement* agar dapat menjadi dasar implementasi teknis dan pengujian terukur. Prioritas *Must* menunjukkan kemampuan fundamental untuk rilis operasional; *Should* berarti fitur krusial yang memperkuat kapabilitas; dan *Could* menunjukkan potensi peningkatan fitur berkelanjutan.
 
 | ID | Area | Requirement | Priority | Acceptance Criteria |
 | --- | --- | --- | --- | --- |
@@ -134,6 +226,8 @@ Dalam proses pengiriman, kurir akan memperbarui status (Pickup -> In Transit -> 
 
 ## 6. Kebutuhan Non-Fungsional
 
+Kebutuhan non-fungsional menyoroti kriteria kualitas (*quality attributes*) yang mutlak dipenuhi di luar fungsionalitas murni sistem. Penegakan poin ini sangat vital karena LogistiKita berhubungan langsung dengan transaksi saldo ke API eksternal dan wajib menopang pendataan *tracking* distribusi logistik berskala besar dengan integritas ketat.
+
 | ID | Quality Attribute | Requirement | Verification |
 | --- | --- | --- | --- |
 | NFR-01 | Security | Sistem shall mengamankan endpoint non-publik dengan JWT validation. | Akses API dashboard kurir/admin tanpa JWT akan ditolak dengan status 401. |
@@ -146,49 +240,120 @@ Dalam proses pengiriman, kurir akan memperbarui status (Pickup -> In Transit -> 
 ## 7. Antarmuka Eksternal
 
 ### 7.1 User Interface Requirements
-UI dikembangkan dengan Next.js dan Tailwind CSS, difokuskan pada operasi pengiriman logistik.
+UI dikembangkan dengan Next.js dan Tailwind CSS, difokuskan pada pengoperasian antarmuka responsif untuk semua *role*. Halaman tidak hanya berfungsi sebagai *form*, melainkan sebagai *control surface* untuk integrasi internal dan interaksi pengguna.
 
 | UI | Primary User | Requirement |
 | --- | --- | --- |
-| / | Publik | Landing page menjelaskan layanan LogistiKita (Reguler, Sameday, Nextday). |
-| /tracking | Publik | Halaman untuk memasukkan Order ID dan melihat timeline/status pengiriman. |
-| /buat-pengiriman | Customer | Form input alamat pengirim, penerima, dan tipe pengiriman dengan estimasi interaktif. |
-| /dashboard/kurir | Kurir | Menampilkan kartu tugas pengiriman (pickup, tiba cabang, antar). |
-| /admin/* | Admin | Kontrol manajemen untuk mengelola cabang, user, dan ringkasan finansial. |
+| `/` | Publik | Landing page menjelaskan layanan LogistiKita dan widget pelacakan cepat. |
+| `/login` | Publik | Menyediakan antarmuka masuk (*sign in*) untuk Kustomer, Kurir, maupun Admin. |
+| `/register` | Publik | Memungkinkan pendaftaran akun baru secara mandiri bagi kustomer. |
+| `/tracking` | Publik | Halaman untuk memasukkan ID Resi/Order dan menampilkan *timeline* histori pengiriman. |
+| `/customer` | Customer | Halaman dasbor pelanggan yang memuat seluruh riwayat pesanan yang pernah mereka buat. |
+| `/customer/buat` | Customer | Halaman *wizard* bagi pelanggan untuk input alamat, jarak interaktif, dan pesanan pengiriman manual. |
+| `/kurir` | Kurir | Antarmuka dinamis (*dashboard* kurir) berisi daftar tugas rute (*pickup, transit, antar, delivered*) beserta kontrol aksi sekali klik. |
+| `/admin` | Admin | *Dashboard* admin merangkum metrik pengiriman total, kurir aktif, dan indikator pendapatan 5% secara visual. |
+| `/admin/*` | Admin | Halaman khusus operasi *backend* yang merangkap CRUD manajemen Cabang, Users, dan daftar komprehensif log Pengiriman. |
 
 ### 7.2 API Requirements
 
 | Endpoint | Method | Consumer | Contract |
 | --- | --- | --- | --- |
-| /api/request_pengiriman | POST | Gateway/Marketplace | Mengirim alamat_asal, alamat_tujuan, koordinat, tipe. Mengembalikan order_id, total ongkir, status. |
-| /api/biaya_pengiriman | POST | Publik / UI | Endpoint open untuk estimasi tarif sebelum membuat pesanan valid. |
+| `/api/auth/login` | POST | Frontend | Autentikasi lintas *role* dengan pengembalian *token JWT*. |
+| `/api/request_pengiriman` | POST | Marketplace / Eksternal | Kontrak integrasi pembentukan pesanan logistik dari ekosistem otomatis di luar portal. |
+| `/api/biaya_pengiriman` | POST | Publik / Frontend | *Endpoint open* penyedia parameter perhitungan jarak (*distance calculation*) dan estimasi ongkir interaktif. |
+| `/api/tracking_status/:order_id` | GET | Publik / Frontend | Memberikan data histori paket secara lengkap (*read-only*) berdasarkan Resi/ID pesanan tanpa butuh *login*. |
+| `/api/kurir/shipments/:id/status/*` | PUT | Kurir (UI) | Rangkaian mutasi state pada siklus pengiriman (seperti `/pickup` atau `/tiba-cabang`) yang diiringi pemutakhiran titik transit. |
+| `/api/pembayaran_logistik` | POST | Internal Sistem | Sinkronisasi internal API guna menangkap persetujuan pemotongan saldo / tagihan finansial kepada *SmartBank Gateway*. |
 
 ### 7.3 Data Exchange Contract
-Kontrak JSON public untuk API `biaya_pengiriman` dan `request_pengiriman` mengikuti aturan kalkulasi harga. Contoh payload hitung biaya:
+Kontrak JSON pada `/api/request_pengiriman` harus diperlakukan sebagai basis *integration contract* yang ketat. Jika sistem eksternal (*Marketplace* atau *SupplierHub*) tidak mengirimkan parameter koordinat lintang dan bujur secara presisi, maka perhitungan jarak Haversine di aplikasi LogistiKita tidak akan berjalan. 
+
+Contoh *payload* yang diwajibkan:
 ```json
 {
+  "order_id": "ORD-12345",
+  "user_id": 99,
+  "source_app": "marketplace",
+  "tipe_pengiriman": "reguler",
+  "alamat_asal": "Jl. Soekarno Hatta No 1, Bandung",
   "lat_asal": -6.9175,
   "lng_asal": 107.6191,
-  "lat_tujuan": -7.2575,
-  "lng_tujuan": 112.7521,
-  "tipe_pengiriman": "reguler"
+  "alamat_tujuan": "Jl. Sudirman No 2, Jakarta",
+  "lat_tujuan": -6.2088,
+  "lng_tujuan": 106.8456,
+  "nilai_transaksi": 250000
 }
 ```
+Jika `tipe_pengiriman` diisi dengan `sameday` padahal selisih koordinat melebihi batas 50 kilometer, API akan menolak eksekusi dan mengembalikan JSON dengan Error Code 400.
 
 ---
 
 ## 8. Workflow Operasional
 
+*Workflow* berikut menjabarkan serangkaian operasi sistem secara holistik pada kondisi skenario pemakaian *real-world*. Tiap-tiap *workflow* ini dapat ditarik sebagai garis besar pedoman *test case end-to-end* maupun *smoke testing* pasca-pengembangan (*deployment*).
+
+```mermaid
+---
+title: Use Case Utama Platform LogistiKita
+---
+graph LR
+    Customer["<b>Customer</b><br>aktor pengguna"]
+    Kurir["<b>Kurir</b><br>aktor lapangan"]
+    Admin["<b>Admin</b><br>aktor pengelola"]
+    Marketplace["<b>Marketplace</b><br>sistem integrasi"]
+
+    subgraph "Batas Sistem LogistiKita"
+        direction TB
+        UC1([Membuat Pesanan Manual])
+        UC2([Melacak Riwayat Paket])
+        UC3([Update Status Transit])
+        UC4([Kelola Cabang & Keuangan])
+        UC5([Request API Pengiriman])
+        UC6([Proses Pembayaran])
+        
+        UC1 -. include .-> UC6
+        UC5 -. include .-> UC6
+    end
+
+    SmartBank["<b>SmartBank API</b><br>sistem eksternal"]
+
+    Customer --> UC1
+    Customer --> UC2
+    Kurir --> UC3
+    Admin --> UC4
+    Marketplace --> UC5
+
+    UC6 -- "potong saldo" --> SmartBank
+
+    classDef actor1 fill:#f3e8ff,stroke:#7c3aed,stroke-width:2px,color:#0f172a
+    classDef actor2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a
+    classDef actor3 fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#0f172a
+    classDef usecase fill:#ffffff,stroke:#475569,stroke-width:2px,color:#0f172a
+    classDef ext fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#0f172a
+
+    class Customer,Kurir actor1;
+    class Admin actor2;
+    class Marketplace actor3;
+    class UC1,UC2,UC3,UC4,UC5,UC6 usecase;
+    class SmartBank ext;
+```
+
+*Gambar 3. Use case utama dan batas sistem.*
+
 | Workflow | Trigger | Main Success Scenario | Failure/Control |
 | --- | --- | --- | --- |
-| Pengiriman Otomatis (Marketplace) | Notifikasi berhasil bayar Checkout. | Marketplace mengirim POST order -> LogistiKita hitung jarak -> API Payment ke SmartBank -> LogistiKita set PENDING/PICKUP. | SmartBank API gagal, LogistiKita merespons status pembayaran gagal ke Marketplace. |
-| Pickup oleh Kurir | Kurir menekan "Pickup" | Kurir mengambil barang, sistem mengubah status menjadi IN_TRANSIT. | ID Pengiriman tidak valid atau sudah dipickup kurir lain. |
-| Antar Cabang | Kurir menekan "Tiba di Cabang" | Kurir transit melaporkan kedatangan, paket dicatat di cabang tersebut. | - |
-| Pengiriman Diterima | Kurir menekan "Delivered" | Paket tiba, status DELIVERED, mencatat waktu selesai. | - |
+| Pengiriman Otomatis (Marketplace) | Notifikasi berhasil bayar *checkout*. | Marketplace mengirim POST order -> LogistiKita hitung ongkir -> API Payment ke SmartBank -> LogistiKita set PENDING/PICKUP. | SmartBank API menolak transaksi (saldo kurang), pesanan batal. |
+| Pengiriman Manual | Customer melengkapi *form wizard*. | Kustomer melengkapi alamat -> Validasi jarak lolos -> Pembayaran berhasil di SmartBank -> Resi logistik terbit. | Jarak melebihi batas tipe layanan (*Sameday*), *checkout* digagalkan. |
+| Update Status Pickup | Kurir menekan "Pickup". | Kurir mengambil barang, sistem memutakhirkan status menjadi IN_TRANSIT. | Paket tidak ditemukan atau sudah ditangani oleh kurir lain. |
+| Transit Cabang | Kurir menekan "Tiba di Cabang". | Kurir mencapai target titik rute, paket ditandai *check-in* di *database* cabang. | - |
+| Pengiriman Diterima | Kurir menekan "Delivered". | Paket tiba di pelanggan, status berubah DELIVERED, siklus *tracking* selesai. | - |
+| Pemantauan Finansial | Admin membuka menu *dashboard*. | Sistem menyajikan agregat *fee* 5%, jumlah paket sukses, dan *chart* pendapatan secara *real-time*. | Jika database gagal diakses, indikator grafik menolak untuk dimuat (*error controlled*). |
 
 ---
 
 ## 9. Risiko, Kontrol, dan Acceptance Criteria
+
+Menyadari posisi sistem LogistiKita yang bertindak selaku motor penarik ongkos operasional (*cost driver*) yang sensitif terhadap integrasi API Gateway, risiko mayoritasnya bukan hanya celah cacat visual (UI bug). Risiko tertingginya bertumpu pada manipulasi kalkulasi biaya, ketidakpastian respons penarikan saldo tagihan, hingga kerancuan status titik *tracking* akibat koneksi yang inkonsisten.
 
 | Risk ID | Risiko | Kontrol Wajib | Acceptance Criteria |
 | --- | --- | --- | --- |
@@ -199,6 +364,8 @@ Kontrak JSON public untuk API `biaya_pengiriman` dan `request_pengiriman` mengik
 ---
 
 ## 10. Matriks Ketertelusuran
+
+*Traceability matrix* (matriks ketertelusuran) menautkan sasaran dan objektif strategis produk kepada ID *requirement* spesifik beserta cara konkrit pembuktiannya (verifikasi). Matriks ini berguna memandu *developer* serta jajaran *Quality Assurance (QA)* agar tetap pada rel fungsionalitas dan tidak merusak keutuhan sistem ketika mengubah kode.
 
 | Objective | Requirement IDs | Evidence / Verification |
 | --- | --- | --- |
