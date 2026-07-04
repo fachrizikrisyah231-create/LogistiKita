@@ -1,5 +1,7 @@
 # LogistiKita — README & Spesifikasi Sistem
 
+[Riwayat Commit di repositori lama bisa di lihat di sini](docs/riwayat_commit.png)
+
 > **Konteks:** LogistiKita adalah satu dari tujuh aplikasi dalam ekosistem simulasi ekonomi UMKM pada Tugas Besar Mata Kuliah RPL 2.
 > Dosen: M. Yusril Helmi Setyawan, S.Kom., M.Kom.
 > Arsitektur: **Microservices** | Stack: **Next.js + React.js** (frontend), **Node.js + Express** (backend), **MySQL** (database)
