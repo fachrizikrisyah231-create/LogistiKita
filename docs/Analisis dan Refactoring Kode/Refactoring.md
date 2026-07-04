@@ -1,3 +1,98 @@
+# Laporan Analisis dan Refactoring Kode
+Platform LogistiKita
+
+| Jenis Dokumen | Contoh laporan proyek aplikasi web |
+|---|---|
+| Topik | MVC, SOLID, Clean Code, High Cohesion, Low Coupling |
+| Sumber Observasi | LogistiKita - Node.js Express MVC & React |
+| Tanggal | 4 Juli 2026 |
+
+Dokumen ini disusun sebagai laporan proyek untuk topik analisis dan refactoring kode aplikasi web. Studi kasus yang digunakan adalah LogistiKita, yaitu platform pengiriman dan manajemen logistik yang menjadi bagian dari ekosistem ekonomi UMKM.
+
+## 1. Identitas Proyek
+
+| Komponen | Isi |
+|---|---|
+| Nama Aplikasi | Platform LogistiKita |
+| Jenis Aplikasi | Aplikasi Web |
+| Pola Arsitektur | MVC Node.js (Backend) dan Next.js (Frontend) |
+| Topik Praktikum | MVC, SOLID, Clean Code, High Cohesion, Low Coupling |
+| Nama Kelompok | Kelompok 5 - LogistiKita |
+| Anggota Kelompok | Faidil Zahpar, Aditya Firmansyah, Fachri Zikrisyah |
+| Repository | https://github.com/fachrizikrisyah231-create/LogistiKita |
+| Sumber Observasi Kode | Platform LogistiKita - Node.js Express MVC |
+| Tanggal Revisi | 4 Juli 2026 |
+
+## 2. Deskripsi Singkat Aplikasi
+
+LogistiKita merupakan aplikasi web berbasis JavaScript (Node.js/Express dan React/Next.js) dengan database MySQL yang berperan sebagai *cost driver* untuk memastikan distribusi barang. Aplikasi ini digunakan untuk mengelola pengiriman barang, di mana setelah transaksi berhasil (dipicu otomatis oleh Marketplace/Supplier atau secara manual oleh kustomer), sistem akan menghitung ongkir, meminta integrasi pembayaran ongkir melalui SmartBank, dan meng-*update* status pengiriman kurir. Aplikasi ini tidak mengelola pembayaran langsung, melainkan hanya melakukan *request payment* ongkir ke SmartBank.
+
+## 3. Tujuan Refactoring
+
+Refactoring pada studi kasus ini bertujuan untuk:
+1) Memperjelas pemisahan tanggung jawab antara *controller*, *model*, *service*, dan rute HTTP.
+2) Mengurangi *controller* yang terlalu gemuk dalam menangani proses sekaligus (validasi, skoring ongkir, kueri database).
+3) Memisahkan logika manipulasi pembaruan rute pengiriman dan pencatatan histori *tracking* agar tidak berulang (*DRY*).
+4) Memindahkan struktur kueri agregat atau laporan keuangan spesifik dari *controller* ke *repository* atau layanan bisnis khusus.
+5) Mengurangi keterikatan keras (*hardcoded coupling*) kode terhadap kelas pihak eksternal, dan membuat arsitektur lebih kokoh untuk pengujian.
+
+## 4. Ruang Lingkup Analisis Kode
+
+Analisis difokuskan pada area *backend* Node.js, terutama pada fungsionalitas lapisan *Controller* dan *Service* pendukungnya. Modul-modul yang menjadi ruang lingkup utama *refactoring* meliputi:
+
+| No | Modul | File/Method | Alasan Dipilih |
+|---|---|---|---|
+| 1 | Dashboard Admin | `adminController.js::getOverview()` | Controller memuat banyak baris kueri SQL agregasi untuk laporan, mencampur akses data langsung dengan respons HTTP. |
+| 2 | Perhitungan Biaya Pengiriman | `costCalculatorService.js::hitungOngkir()` | Percabangan *if-else* bertingkat untuk setiap layanan, menyulitkan ekstensi penambahan armada tipe baru. |
+| 3 | Manajemen User & Kurir | `userService.js::assignDeliveryRoute()` | Kelas *Service* mencampuradukkan fitur autentikasi kustomer biasa dengan logika rute operasional kurir. |
+| 4 | Pemrosesan Pembayaran | `paymentService.js::processLogisticsPayment()` | Logika kelas tingkat tinggi bergantung dan memanggil (*hardcoded*) kelas spesifik penyedia API (*SmartBank*) secara statis. |
+| 5 | Update Status Kurir | `kurirController.js::_updateStatus()` | *God Method* yang menumpuk aturan otorisasi, penulisan riwayat *tracking*, kalkulasi transisi rute, dan manipulasi *database* utama. |
+
+## 5. Struktur Folder Aplikasi
+
+Struktur aktual yang mendominasi operasi yang dianalisis dari *repository*:
+
+```text
+logistikita/
+|-- backend/
+|   |-- src/
+|   |   |-- controllers/
+|   |   |   |-- adminController.js
+|   |   |   |-- costController.js
+|   |   |   |-- kurirController.js
+|   |   |   |-- shipmentController.js
+|   |   |-- middleware/
+|   |   |-- models/
+|   |   |-- routes/
+|   |   |   |-- logistikitaRoutes.js
+|   |   |-- services/
+|   |   |   |-- costCalculatorService.js
+|   |   |   |-- ...
+|   |   |-- utils/
+|   |   |-- app.js
+|   |   |-- server.js
+```
+
+## 6. Ringkasan Arsitektur MVC
+
+Aplikasi menggunakan pola arsitektur MVC sederhana pada sisi *backend* berbasis Node.js/Express, dengan pengaturan *router* utama pada subfolder `routes/`.
+
+| Lapisan | Contoh File | Tanggung Jawab Saat Ini |
+|---|---|---|
+| Entry Point | `server.js`, `app.js` | Menginisialisasi *server* Express, memuat *middleware* antarmuka global, dan menyambungkan *database*. |
+| Router | `logistikitaRoutes.js` | Memetakan *endpoint* URL ke *controller* dan menerapkan validasi lapisan awal (JWT *auth*). |
+| Controller | `adminController.js`, `kurirController.js` | Pusat alur eksekusi: menerima beban *request*, memanggil data, dan mengirimkan kompilasi JSON *response*. |
+| Model | `Shipment.js`, `User.js` | Modul yang mewakili manipulasi tabel dan memfasilitasi interaksi langsung ke skema MySQL. |
+| Service | `costCalculatorService.js` | Tempat pembungkus fungsi kalkulasi independen (seperti penghitungan jarang lintang-bujur). |
+
+**Ringkasan alur utama:**
+1) Kustomer atau sistem eksternal (Marketplace/SupplierHub) membuat pesanan pengiriman melalui `shipmentController`.
+2) Sistem secara otomatis memanggil `costCalculatorService` untuk menghitung ongkos kirim.
+3) Sistem memanggil `paymentService` untuk meneruskan permintaan potong saldo ke SmartBank.
+4) Jika pembayaran disetujui, pesanan dicatat ke *database* dan dialokasikan ke cabang transit awal (`PENDING`/`PICKUP`).
+5) Kurir mengambil paket dan menekan tombol *update* status secara bertahap lewat aplikasi kurir (`kurirController`).
+6) Dasbor admin dan publik (*tracking*) mengambil pembaruan riwayat status tersebut dari *database*.
+
 ## 7. Daftar Temuan Masalah Kode
 
 | No | File/Method | Masalah Kode | Prinsip Terkait | Dampak Negatif |
@@ -7,6 +102,16 @@
 | 3 | `backend/src/services/userService.js` <br> `assignDeliveryRoute()` | Kelas `UserService` melayani pendaftaran kustomer dan sekaligus memuat logika penugasan rute pengiriman kurir. | ISP, Separation of Concerns | Kustomer biasa terikat pada fitur rute kurir yang tidak pernah mereka butuhkan. |
 | 4 | `backend/src/services/paymentService.js` <br> `processLogisticsPayment()` | Logika layanan secara langsung menginisialisasi kelas penyedia spesifik (`new SmartBankAPI()`) di dalam fungsinya. | DIP, Low Coupling | Sistem terikat kuat (*tightly coupled*) dengan satu penyedia pembayaran. Sangat sulit jika ingin bermigrasi ke penyedia lain. |
 | 5 | `backend/src/controllers/kurirController.js` <br> `_updateStatus()` | Menyatukan otorisasi, perubahan pengiriman, pembuatan histori *tracking*, dan penentuan logika transisi rute dalam satu alur besar. | SRP, High Cohesion | Fungsi membesar secara tumpang tindih (*God Method*). Perubahan pada alur rute atau *tracking* rawan menciptakan cacat (*bug*) tambahan. |
+| 6 |  |  |  |  |
+| 7 |  |  |  |  |
+| 8 |  |  |  |  |
+| 9 |  |  |  |  |
+| 10 |  |  |  |  |
+| 11 |  |  |  |  |
+| 12 |  |  |  |  |
+| 13 |  |  |  |  |
+| 14 |  |  |  |  |
+| 15 |  |  |  |  |
 
 ## 8. Analisis Before-After Refactoring
 
@@ -245,3 +350,131 @@ class PaymentService {
   }
 ```
 - **Dampak Perbaikan**: Kepaduan (*cohesion*) pada *controller* HTTP meningkat drastis. Perubahan logika aturan rute (*routing*) atau format penulisan log sistem di masa depan tidak lagi merusak *controller* HTTP, melainkan dapat diatur terpusat di `ShipmentUpdateService`.
+
+### 8.6 Temuan 6
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.7 Temuan 7
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.8 Temuan 8
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.9 Temuan 9
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.10 Temuan 10
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.11 Temuan 11
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.12 Temuan 12
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.13 Temuan 13
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.14 Temuan 14
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+### 8.15 Temuan 15
+- **Lokasi Kode**: 
+- **Kode Sebelum Refactoring**:
+- **Masalah yang Ditemukan**: 
+- **Prinsip yang Dilanggar**: 
+- **Strategi Refactoring**: 
+- **Kode Sesudah Refactoring**:
+- **Dampak Perbaikan**: 
+
+## 9. Class Diagram Sebelum Refactoring
+
+Diagram berikut menggambarkan kondisi ringkas sistem sebelum *refactoring*. Setiap *class* di *backend* ditulis dalam format hierarki untuk menunjukkan *dependency* fungsionalnya. Pada kondisi inisial ini, lapisan *controller* acapkali ditarik sebagai pusat gravitasi koordinasi (memuat siklus HTTP *request*, akses *database* masif, operasi keamanan JWT, hingga logika *payment*). Oleh karenanya, tingkat *coupling* operasional antara *controller* dengan model basis data sangat rapat dan sulit dibongkar (*monolithic function*).
+
+*(Diagram Class Sebelum Refactoring ditempatkan di sini)*
+
+## 10. Class Diagram Sesudah Refactoring
+
+Diagram berikut menyajikan rancangan peta *refactoring* yang diusulkan. *Class* dan lapisan (*layer*) dipilah rapi guna mencerahkan pengisolasian tanggung jawab masing-masing (*Separation of Concerns*). Beban kerja *Controller* dipangkas murni menjadi pengatur kanal navigasi web (rute HTTP). Proses kalkulasi dan penulisan terhubung (*business rule*) diamankan di lingkup *Service*, sedangkan interaksi basis data dibungkus di dalam *Repository/Model Adapter*. Desain ini memastikan pelonggaran *coupling* yang sangat tajam tanpa mencederai fitur sistem.
+
+*(Diagram Class Sesudah Refactoring ditempatkan di sini)*
+
+## 11. Analisis Penerapan SOLID
+
+| Prinsip SOLID | Kondisi Sebelum | Perbaikan yang Disarankan | Dampak |
+|---|---|---|---|
+| SRP | *Controller* pembaruan status (`_updateStatus`) dan pelaporan *dashboard* admin (`getOverview`) menguasai terlalu banyak komando fungsi (*God Method*). | Pindahkan pembaruan entitas rute, pencatatan log historis, dan kueri agregasi pelaporan ke *Service* atau *Repository* spesifik. | Komponen pengatur lalu-lintas web (*Controller*) menjadi ramping, tajam pada fungsionalitasnya, dan terisolasi bagi uji coba. |
+| OCP | Menambah kategori tipe pengiriman baru senantiasa membongkar paksa tumpukan blok kondisi percabangan (*if-else*) pada kalkulator harga. | Terapkan rumusan pendelegasian (*Strategy Pattern*) yang mengekstrak tarif per armada ke entitas (*Class*) strateginya masing-masing. | Tipe pengiriman ekspedisi mutakhir kelak bisa segera diintegrasikan tanpa bahaya melukai ekosistem kode lama yang tangguh. |
+| DIP | *Controller* terikat absolut dengan rincian kelas level rendah (kueri Raw SQL dari modul penyedia *Payment Gateway* pihak ketiga). | Ganti ikatan fisik secara vertikal melalui metode pendelegasian (injeksi depedensi / abstraksi antarmuka) saat kelas diciptakan. | Kebergantungan pada produk spesifik terkikis, memperbolehkan perombakan komponen (*mocking*) saat melangsungkan validasi tes sistem. |
+
+*Catatan: Parameter penilaian SOLID dapat bersifat subjektif berdasarkan rasio beban skalabilitas. Penegakan titik SRP, OCP, dan DIP merupakan landasan perbaikan prioritas bagi arsitektur model Node.js.*
+
+## 12. Analisis Clean Code
+
+| Aspek Clean Code | Masalah Sebelum | Perbaikan | Dampak |
+|---|---|---|---|
+| Meaningful Names | Penamaan parameter internal kurang mendeskripsikan tujuan data, misalnya deklarasi anonim `[[{ total_revenue }]]` pada destrukturisasi kueri yang digabung dengan rute HTTP. | Dedikasikan pembungkusan dan alokasikan identitas *variable* representatif seperti `getOverviewStats()` yang jelas mewakili aktivitasnya. | Logika maksud algoritma lebih instan terjelaskan dan mengurangi beban konseptual pengembang lain (*Self-documenting code*). |
+| Small Functions | Alur pelaporan sering menyatukan puluhan baris sintaks raw MySQL hingga logika iterasi respons ke dalam tunggalan metode kontroler raksasa. | Penggal alur operasional tersebut menjadi kompartemen *Service* yang padat spesifik pada objek domainnya saja. | Unit modul jauh lebih *compact*, koheren, presisi, dan terhindar dari bahaya (*Spaghetti Code*). |
+| Avoid Duplication | Pola manipulasi penulisan tabel `tracking_logs` pada berbagai fungsi tahapan kurir mengulang eksekusi penyisipan *SQL Insert* serupa berkali-kali. | Pemusatan manipulasi log dipayungi pada satu titik *Single Point of Truth* melalui pemanggilan *Service* pencatat *tracking*. | Perubahan pada format *schema* tabel (*database*) histori hanya mengharuskan penyesuaian dari pusat rujukan utamanya saja. |
+
+## 13. Analisis High Cohesion dan Low Coupling
+
+| Aspek | Sebelum Refactoring | Sesudah Refactoring |
+|---|---|---|
+| Cohesion Controller | **Rendah**. Parameter HTTP, pembentukan kueri, keamanan autentikasi, serta pemicu skoring *fee* tergabung sporadis di lokasi tak menentu. | **Solid dan Tinggi**. Komponen ini kembali memfokuskan dirinya hanya pada parameter validasi dan penjawab permintaan web secara eksklusif. |
+| Cohesion Service | **Belum Presisi**. Logika operasional kustomer biasa sering kali berbagi ranah memori dan berkas dengan komputasi alur teknis penugasan *routing* kurir. | **Spesifik dan Tajam**. Bidang pemrosesan dikurung ketat sesuai domain aktualitas pelanggannya (*UserAuth* vs *CourierOperation*). |
+| Coupling Database | **Amat Tinggi**. Hampir keseluruhan alur pengiriman di kontroler memancarkan injeksi spesifik *query* manipulasi tabel secara vulgar ke pangkalan data. | **Jauh Lebih Fleksibel**. Interupsi kontroler diputihkan dan dilempar secara abstraktif; detail akses hanya diurus oleh agen fasilitator (*Repository*). |
