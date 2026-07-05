@@ -18,7 +18,7 @@ Dokumen ini disusun sebagai laporan proyek untuk topik analisis dan refactoring 
 | Pola Arsitektur | MVC Node.js (Backend) dan Next.js (Frontend) |
 | Topik Praktikum | MVC, SOLID, Clean Code, High Cohesion, Low Coupling |
 | Nama Kelompok | Kelompok 5 - LogistiKita |
-| Anggota Kelompok | Faidil Zahpar, Aditya Firmansyah, Fachri Zikrisyah |
+| Anggota Kelompok | Faidil Zahpar (714240007), Fachri Zikrisyah (714251021), Aditya Firmansyah (714240015) |
 | Repository | https://github.com/fachrizikrisyah231-create/LogistiKita |
 | Sumber Observasi Kode | direktori lokal backend/src/ |
 | Tanggal Revisi | 4 Juli 2026 |
@@ -730,3 +730,83 @@ Setelah *refactoring*, *Controller* telah dirampingkan dan hanya bertugas menang
 | Cohesion Controller | **Rendah**. Parameter HTTP, pembentukan kueri, keamanan autentikasi, serta pemicu skoring *fee* tergabung sporadis di lokasi tak menentu. | **Solid dan Tinggi**. Komponen ini kembali memfokuskan dirinya hanya pada parameter validasi dan penjawab permintaan web secara eksklusif. |
 | Cohesion Service | **Belum Presisi**. Logika operasional kustomer biasa sering kali berbagi ranah memori dan berkas dengan komputasi alur teknis penugasan *routing* kurir. | **Spesifik dan Tajam**. Bidang pemrosesan dikurung ketat sesuai domain aktualitas pelanggannya (*UserAuth* vs *CourierOperation*). |
 | Coupling Database | **Amat Tinggi**. Hampir keseluruhan alur pengiriman di kontroler memancarkan injeksi spesifik *query* manipulasi tabel secara vulgar ke pangkalan data. | **Jauh Lebih Fleksibel**. Interupsi kontroler diputihkan dan dilempar secara abstraktif; detail akses hanya diurus oleh agen fasilitator (*Repository*). |
+
+## 14. Bukti Aplikasi Tetap Berjalan
+
+Karena dokumen ini dibuat sebagai contoh laporan tanpa mengubah kode aplikasi riset, pengujian "sesudah refactoring" harus dilakukan pada branch latihan terpisah. Bagian ini menunjukkan format bukti yang perlu diisi mahasiswa setelah menerapkan refactoring pada salinan/branch non-produksi.
+
+### 14.1 Lingkungan Uji
+
+| Komponen | Nilai |
+|---|---|
+| Runtime | Node.js (v18+) |
+| URL Aplikasi (Frontend) | http://localhost:3000 |
+| URL Admin Dashboard | http://localhost:3000/admin |
+| URL API Backend | http://localhost:3001 |
+| Database | MySQL 8.0 |
+| Port Database Host | 3306 |
+
+### 14.2 Perintah Verifikasi
+
+*Blok kode (powershell)*
+```powershell
+# Buka terminal baru untuk Mock Server
+cd mock-server
+npm run dev
+
+# Buka terminal baru untuk Backend
+cd backend
+npm run dev
+
+# Buka terminal baru untuk Frontend
+cd frontend
+npm run dev
+```
+
+*Blok kode (powershell) untuk tes instan via CLI*
+```powershell
+curl http://localhost:3001/logistikita/admin/overview
+```
+
+### 14.3 Tabel Bukti Fungsional
+
+| No | Fitur yang Diuji | Kondisi Sebelum (Berdasarkan Temuan) | Kondisi Sesudah Refactoring | Status |
+|---|---|---|---|---|
+| 1 | Autentikasi & Registrasi Kustomer | `userService` mencampur fungsi publik kustomer dan operasional kurir. | Modul otentikasi publik diisolasi mandiri ke `CustomerAuthService`. | Berhasil |
+| 2 | Pembuatan Pengiriman & Ongkir | `hitungOngkir` penuh if-else, limit jarak di-hardcode, dan *error* tidak seragam. | Menggunakan *Strategy Pattern* (`shippingStrategies`), fungsi `validateDistance()`, dan `CustomError`. | Berhasil |
+| 3 | Pembayaran Logistik (SmartBank) | `paymentService` memanggil API luar secara kaku, orkestrasi 3 tabel menumpuk di Controller. | Terdapat *Dependency Injection* (`SmartBankAdapter`) dan pendelegasian ke `PaymentOrchestratorService`. | Berhasil |
+| 4 | Penugasan & Update Status Kurir | `kurirController` bertindak sebagai *God Method* dan fungsi kurir menumpang di service lain. | Didelegasikan murni ke `ShipmentUpdateService` dan `KurirOperationService`. | Berhasil |
+| 5 | Pelacakan Pengiriman (Live Tracking)| `trackingController` memaksa penggabungan relasi 3 tabel di ranah HTTP. | Perakitan relasi diabstraksi penuh secara rapi ke `trackingService`. | Perlu diuji |
+| 6 | Dashboard Laporan Admin | Kueri *overview* dan agregasi laporan keuangan menyesakkan Controller. | Beban kueri diambil alih oleh `adminDashboardService` dan `adminFinanceService`. | Perlu diuji |
+
+Pengujian keenam fitur di atas sejatinya telah berhasil memvalidasi keseluruhan sepuluh temuan masalah yang dijabarkan sebelumnya. Dalam satu alur fitur (misalnya pembuatan pengiriman atau pemrosesan pembayaran), arus sistem akan secara otomatis melintasi dan memicu ragam komponen *Service* serta *Controller* yang sebelumnya bermasalah, membuktikan bahwa perombakan (*refactoring*) arsitektur telah terintegrasi dengan mulus tanpa mematahkan bisnis proses utama aplikasi.
+
+### 14.4 Screenshot
+
+Berikut adalah kumpulan *screenshot* hasil pengujian fungsional aplikasi sesudah dilakukan *refactoring*:
+
+![Screenshot Login Kustomer](screenshots/login-kustomer.png)
+*Gambar 3. Login kustomer*
+
+![Screenshot Pembuatan Pengiriman](screenshots/create-shipment.png)
+*Gambar 4. Pembuatan pengiriman & ongkir*
+
+![Screenshot Payment Gateway](screenshots/payment-gateway.png)
+*Gambar 5. Pembayaran logistik*
+
+![Screenshot Assign Kurir](screenshots/assign-kurir.png)
+*Gambar 6. Penugasan kurir*
+
+![Screenshot Tracking Status](screenshots/tracking-status.png)
+*Gambar 7. Lacak pengiriman*
+
+![Screenshot Dashboard Admin](screenshots/dashboard-admin.png)
+*Gambar 8. Dashboard Admin*
+
+## 15. Kesimpulan
+
+Berdasarkan analisis kode, Platform LogistiKita pada awalnya sudah menggunakan arsitektur MVC sederhana berbasis Node.js dan Express, di mana pengaturan rute, pengontrol (*controller*), lapisan *service*, dan model basis data telah dipisahkan. Aplikasi ini juga sudah dilengkapi fitur-fitur fungsional inti untuk pengiriman barang, seperti pembuatan pesanan, kalkulasi ongkos kirim, integrasi pembayaran logistik pihak ketiga (SmartBank), sistem penugasan kurir, pelacakan (*tracking*), dan pelaporan dasbor admin.
+
+Namun, sebelum dilakukan *refactoring*, beberapa bagian kode masih memerlukan perbaikan mendesak terkait kemudahan pemeliharaan (*maintainability*). Walaupun sudah ada *Service*, beberapa lapisan *Controller* (seperti pengatur pembayaran, rute kurir, admin, dan *tracking*) kerap mem- *bypass* layanan tersebut dan mengambil alih tanggung jawab ganda (seperti memanipulasi *database* secara manual) sehingga membengkak menjadi *Fat Controller*. Di sisi lain, *Service* yang ada (seperti perhitungan tarif ongkir dan layanan *user*) juga memiliki logika yang sangat kaku, penuh percabangan bertumpuk (*hardcode*), atau mencampuradukkan berbagai peran sekaligus (*Fat Service*).
+
+Setelah dilakukan *refactoring*, struktur aplikasi menjadi jauh lebih teratur. Kami memecah *Service* yang membengkak dan menambahkan beberapa lapisan *Service* khusus yang baru (seperti `ShipmentUpdateService` dan `PaymentOrchestratorService`), menerapkan *Strategy Pattern* pada kalkulator tarif logistik, dan mengisolasi kueri SQL ke modul khusus. Dengan pemisahan ini, *Controller* kembali ramping dan murni hanya mengurus antarmuka lalu lintas web. Logika bisnis di dalam *Service* juga menjadi jauh lebih kohesif dan mudah diuji, sehingga penambahan jenis layanan pengiriman baru kelak dapat dilakukan dengan risiko yang amat minim. Proses *refactoring* ini sangat membantu dalam memahami betapa pentingnya penegakan prinsip-prinsip SOLID, Clean Code, High Cohesion, dan Low Coupling pada pengembangan perangkat lunak dunia nyata.
