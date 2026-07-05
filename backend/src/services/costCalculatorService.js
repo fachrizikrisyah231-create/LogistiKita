@@ -3,21 +3,22 @@
 require('dotenv').config();
 
 const strategies = require('./shippingStrategies');
+const CustomError = require('../utils/CustomError');
 const FEE_LAYANAN_PERCENTAGE = parseFloat(process.env.FEE_LAYANAN_PERCENTAGE) || 0.05;
 
 /**
  * Menghitung ongkir berdasarkan jarak dan tipe pengiriman.
  */
-function hitungOngkir(jarakKm, tipePengiriman = 'reguler') {
+function getStrategy(tipePengiriman) {
   const strategy = strategies[tipePengiriman.toLowerCase()];
-  
   if (!strategy) {
-    const err = new Error('Tipe pengiriman tidak valid');
-    err.status = 400; // Standarisasi format error (Memperbaiki Temuan 10 parsial)
-    err.code = 'INVALID_SHIPPING_TYPE';
-    throw err;
+    throw new CustomError('Tipe pengiriman tidak valid', 400, 'INVALID_SHIPPING_TYPE');
   }
+  return strategy;
+}
 
+function hitungOngkir(jarakKm, tipePengiriman = 'reguler') {
+  const strategy = getStrategy(tipePengiriman);
   return strategy.calculate(jarakKm);
 }
 
@@ -43,4 +44,4 @@ function hitungSemuaBiaya(jarakKm, tipePengiriman) {
   return { ongkir, fee_layanan, total_biaya, catatan_ongkir, catatan_fee };
 }
 
-module.exports = { hitungOngkir, hitungFeeLayanan, hitungSemuaBiaya };
+module.exports = { hitungOngkir, hitungFeeLayanan, hitungSemuaBiaya, getStrategy };

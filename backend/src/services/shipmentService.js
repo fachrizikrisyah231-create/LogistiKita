@@ -10,6 +10,7 @@ const haversineService = require('./haversineService');
 const routingService = require('./routingService');
 const logger = require('../utils/logger');
 const db = require('../config/database');
+const CustomError = require('../utils/CustomError');
 
 class ShipmentService {
   async processShipmentRequest(input) {
@@ -23,28 +24,16 @@ class ShipmentService {
     // 1. Cek duplikasi
     const isDuplicate = await Shipment.isDuplicate(orderId);
     if (isDuplicate) {
-      const err = new Error(`order_id ${orderId} sudah terdaftar.`);
-      err.status = 400;
-      throw err;
+      throw new CustomError(`order_id ${orderId} sudah terdaftar.`, 400, 'DUPLICATE_ORDER');
     }
 
     // 2. Hitung jarak
     const jarakKm = haversineService.calculateDistance(latAsal, lngAsal, latTujuan, lngTujuan);
 
-    // 3. Validasi batas jarak berdasarkan tipe
-    const maxSameday = parseInt(process.env.SAMEDAY_MAX_KM) || 50;
-    const maxNextday = parseInt(process.env.NEXTDAY_MAX_KM) || 250;
-
-    if (tipePengiriman === 'sameday' && jarakKm > maxSameday) {
-      const err = new Error(`Jarak terlalu jauh untuk Sameday (maks ${maxSameday} km). Jarak Anda: ${jarakKm} km.`);
-      err.status = 400;
-      throw err;
-    }
-    if (tipePengiriman === 'nextday' && jarakKm > maxNextday) {
-      const err = new Error(`Jarak terlalu jauh untuk Nextday (maks ${maxNextday} km). Jarak Anda: ${jarakKm} km.`);
-      err.status = 400;
-      throw err;
-    }
+    // 3. Validasi batas jarak berdasarkan tipe dengan LSP
+    // Strategi sudah diambil di costCalculatorService, kita gunakan fungsi getStrategy
+    const strategy = costCalculatorService.getStrategy(tipePengiriman);
+    strategy.validateDistance(jarakKm);
 
     // 4. Tentukan rute cabang
     const routeInfo = await routingService.determineRoute(latAsal, lngAsal, latTujuan, lngTujuan);
