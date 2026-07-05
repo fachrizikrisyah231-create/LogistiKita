@@ -2,28 +2,23 @@
 
 require('dotenv').config();
 
-const ONGKIR_REGULER_PER_KM = parseInt(process.env.ONGKIR_REGULER_PER_KM) || 2000;
-const ONGKIR_NEXTDAY_PER_KM = parseInt(process.env.ONGKIR_NEXTDAY_PER_KM) || 3500;
-const ONGKIR_SAMEDAY_PER_KM = parseInt(process.env.ONGKIR_SAMEDAY_PER_KM) || 5000;
+const strategies = require('./shippingStrategies');
 const FEE_LAYANAN_PERCENTAGE = parseFloat(process.env.FEE_LAYANAN_PERCENTAGE) || 0.05;
 
 /**
  * Menghitung ongkir berdasarkan jarak dan tipe pengiriman.
  */
 function hitungOngkir(jarakKm, tipePengiriman = 'reguler') {
-  let tarifPerKm;
-  switch (tipePengiriman) {
-    case 'nextday': tarifPerKm = ONGKIR_NEXTDAY_PER_KM; break;
-    case 'sameday': tarifPerKm = ONGKIR_SAMEDAY_PER_KM; break;
-    case 'reguler':
-    default:
-      tarifPerKm = ONGKIR_REGULER_PER_KM; break;
+  const strategy = strategies[tipePengiriman.toLowerCase()];
+  
+  if (!strategy) {
+    const err = new Error('Tipe pengiriman tidak valid');
+    err.status = 400; // Standarisasi format error (Memperbaiki Temuan 10 parsial)
+    err.code = 'INVALID_SHIPPING_TYPE';
+    throw err;
   }
 
-  const ongkir = Math.floor(jarakKm * tarifPerKm);
-  const catatan = `Ongkir ${tipePengiriman} (${jarakKm} km x Rp${tarifPerKm.toLocaleString('id-ID')} = Rp${ongkir.toLocaleString('id-ID')})`;
-
-  return { ongkir, catatan };
+  return strategy.calculate(jarakKm);
 }
 
 /**
