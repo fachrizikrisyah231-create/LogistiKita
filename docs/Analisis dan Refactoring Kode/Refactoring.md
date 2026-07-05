@@ -20,7 +20,7 @@ Dokumen ini disusun sebagai laporan proyek untuk topik analisis dan refactoring 
 | Nama Kelompok | Kelompok 5 - LogistiKita |
 | Anggota Kelompok | Faidil Zahpar, Aditya Firmansyah, Fachri Zikrisyah |
 | Repository | https://github.com/fachrizikrisyah231-create/LogistiKita |
-| Sumber Observasi Kode | Platform LogistiKita - Node.js Express MVC |
+| Sumber Observasi Kode | direktori lokal backend/src/ |
 | Tanggal Revisi | 4 Juli 2026 |
 
 ## 2. Deskripsi Singkat Aplikasi
@@ -35,6 +35,8 @@ Refactoring pada studi kasus ini bertujuan untuk:
 3) Memisahkan logika manipulasi pembaruan rute pengiriman dan pencatatan histori *tracking* agar tidak berulang (*DRY*).
 4) Memindahkan struktur kueri agregat atau laporan keuangan spesifik dari *controller* ke *repository* atau layanan bisnis khusus.
 5) Mengurangi keterikatan keras (*hardcoded coupling*) kode terhadap kelas pihak eksternal, dan membuat arsitektur lebih kokoh untuk pengujian.
+6) Menstandarisasi format pelemparan *error* (*Exception*) sehingga respons HTTP berjalan konsisten tanpa merusak abstraksi.
+7) Mengimplementasikan struktur *strategy pattern* atau hierarki untuk validasi rute pengiriman, agar mematuhi perluasan fungsional (OCP dan LSP).
 
 ## 4. Ruang Lingkup Analisis Kode
 
@@ -47,6 +49,11 @@ Analisis difokuskan pada area *backend* Node.js, terutama pada fungsionalitas la
 | 3 | Manajemen User & Kurir | `userService.js::assignDeliveryRoute()` | Kelas *Service* mencampuradukkan fitur autentikasi kustomer biasa dengan logika rute operasional kurir. |
 | 4 | Pemrosesan Pembayaran | `paymentService.js::processLogisticsPayment()` | Logika kelas tingkat tinggi bergantung dan memanggil (*hardcoded*) kelas spesifik penyedia API (*SmartBank*) secara statis. |
 | 5 | Update Status Kurir | `kurirController.js::_updateStatus()` | *God Method* yang menumpuk aturan otorisasi, penulisan riwayat *tracking*, kalkulasi transisi rute, dan manipulasi *database* utama. |
+| 6 | Transaksi Pembayaran | `paymentController.js::pembayaranLogistik()` | *Fat Controller* yang mengatur orkestrasi 3 entitas *database* berbeda secara manual usai menerima respons dari API. |
+| 7 | Agregasi Laporan Keuangan | `adminController.js::getKeuangan()` | Komputasi bisnis finansial dan baris eksekusi *query* tergabung jadi satu di lapisan *routing*. |
+| 8 | Orkestrasi Histori Paket | `trackingController.js::getTracking()` | Merangkai penggabungan relasi tabel pencarian riwayat paket secara paksa di antarmuka HTTP. |
+| 9 | Layanan Inti Pemesanan | `shipmentService.js::processShipmentRequest()` | Terdapat batasan logika jarak spesifik yang di-*hardcode*, gagal memenuhi prinsip penambahan armada secara dinamis. |
+| 10 | Standarisasi Format Error | `costCalculatorService.js` (Layanan) | Ketidakkonsistenan tipe *Exception* mencederai kontrak *Error Handling* di sisi antarmuka (*Controller*). |
 
 ## 5. Struktur Folder Aplikasi
 
@@ -61,6 +68,8 @@ logistikita/
 |   |   |   |-- costController.js
 |   |   |   |-- kurirController.js
 |   |   |   |-- shipmentController.js
+|   |   |   |-- paymentController.js
+|   |   |   |-- trackingController.js
 |   |   |-- middleware/
 |   |   |-- models/
 |   |   |-- routes/
@@ -557,6 +566,8 @@ Diagram berikut menyajikan rancangan peta *refactoring* yang diusulkan. *Class* 
 |---|---|---|---|
 | SRP | *Controller* pembaruan status (`_updateStatus`) dan pelaporan *dashboard* admin (`getOverview`) menguasai terlalu banyak komando fungsi (*God Method*). | Pindahkan pembaruan entitas rute, pencatatan log historis, dan kueri agregasi pelaporan ke *Service* atau *Repository* spesifik. | Komponen pengatur lalu-lintas web (*Controller*) menjadi ramping, tajam pada fungsionalitasnya, dan terisolasi bagi uji coba. |
 | OCP | Menambah kategori tipe pengiriman baru senantiasa membongkar paksa tumpukan blok kondisi percabangan (*if-else*) pada kalkulator harga. | Terapkan rumusan pendelegasian (*Strategy Pattern*) yang mengekstrak tarif per armada ke entitas (*Class*) strateginya masing-masing. | Tipe pengiriman ekspedisi mutakhir kelak bisa segera diintegrasikan tanpa bahaya melukai ekosistem kode lama yang tangguh. |
+| LSP | Penanganan validasi layanan dan *Error Handling* pada level *Service* melempar tipe respons dan sifat yang tidak substitutif satu sama lain. | Terapkan kelas *Error* khusus domain (*Custom Exceptions*) dan antarmuka seragam bagi tipe *Service* pengiriman. | Proses di tingkatan yang lebih tinggi (seperti respons HTTP) kebal terhadap anomali perbedaan implementasi anak kelasnya. |
+| ISP | Kelas gabungan seperti `UserService` melayani pendaftaran kustomer publik sekaligus menyusupkan fungsionalitas penugasan rute kurir operasional. | Pecah struktur layanan menjadi ruang lingkup yang lebih kecil dan eksklusif, misalnya menjadi `CustomerAuthService` dan `KurirOperationService`. | Entitas pengguna eksternal tidak lagi dipaksa bergantung pada fungsionalitas rute kurir, menjaga *interface* layanan tetap bersih dan sempit. |
 | DIP | *Controller* terikat absolut dengan rincian kelas level rendah (kueri Raw SQL dari modul penyedia *Payment Gateway* pihak ketiga). | Ganti ikatan fisik secara vertikal melalui metode pendelegasian (injeksi depedensi / abstraksi antarmuka) saat kelas diciptakan. | Kebergantungan pada produk spesifik terkikis, memperbolehkan perombakan komponen (*mocking*) saat melangsungkan validasi tes sistem. |
 
 *Catatan: Parameter penilaian SOLID dapat bersifat subjektif berdasarkan rasio beban skalabilitas. Penegakan titik SRP, OCP, dan DIP merupakan landasan perbaikan prioritas bagi arsitektur model Node.js.*
@@ -568,6 +579,7 @@ Diagram berikut menyajikan rancangan peta *refactoring* yang diusulkan. *Class* 
 | Meaningful Names | Penamaan parameter internal kurang mendeskripsikan tujuan data, misalnya deklarasi anonim `[[{ total_revenue }]]` pada destrukturisasi kueri yang digabung dengan rute HTTP. | Dedikasikan pembungkusan dan alokasikan identitas *variable* representatif seperti `getOverviewStats()` yang jelas mewakili aktivitasnya. | Logika maksud algoritma lebih instan terjelaskan dan mengurangi beban konseptual pengembang lain (*Self-documenting code*). |
 | Small Functions | Alur pelaporan sering menyatukan puluhan baris sintaks raw MySQL hingga logika iterasi respons ke dalam tunggalan metode kontroler raksasa. | Penggal alur operasional tersebut menjadi kompartemen *Service* yang padat spesifik pada objek domainnya saja. | Unit modul jauh lebih *compact*, koheren, presisi, dan terhindar dari bahaya (*Spaghetti Code*). |
 | Avoid Duplication | Pola manipulasi penulisan tabel `tracking_logs` pada berbagai fungsi tahapan kurir mengulang eksekusi penyisipan *SQL Insert* serupa berkali-kali. | Pemusatan manipulasi log dipayungi pada satu titik *Single Point of Truth* melalui pemanggilan *Service* pencatat *tracking*. | Perubahan pada format *schema* tabel (*database*) histori hanya mengharuskan penyesuaian dari pusat rujukan utamanya saja. |
+| Error Handling | Validasi eror (`costCalculatorService` dll) sering kali langsung melempar kegagalan tanpa kode status sehingga sistem selalu merespons *Error 500*. | Terapkan penangkap eror fungsional dengan menggunakan standar *Custom Error Class* berlapis untuk validasi HTTP. | Manajemen galat (*bug/error*) lebih spesifik (sistem tahu mana yang 400 *Bad Request* dan mana yang 500 *Server Error*). |
 
 ## 13. Analisis High Cohesion dan Low Coupling
 
