@@ -102,11 +102,11 @@ Aplikasi menggunakan pola arsitektur MVC sederhana pada sisi *backend* berbasis 
 | 3 | `backend/src/services/userService.js` <br> `assignDeliveryRoute()` | Kelas `UserService` melayani pendaftaran kustomer dan sekaligus memuat logika penugasan rute pengiriman kurir. | ISP, Separation of Concerns | Kustomer biasa terikat pada fitur rute kurir yang tidak pernah mereka butuhkan. |
 | 4 | `backend/src/services/paymentService.js` <br> `processLogisticsPayment()` | Logika layanan secara langsung menginisialisasi kelas penyedia spesifik (`new SmartBankAPI()`) di dalam fungsinya. | DIP, Low Coupling | Sistem terikat kuat (*tightly coupled*) dengan satu penyedia pembayaran. Sangat sulit jika ingin bermigrasi ke penyedia lain. |
 | 5 | `backend/src/controllers/kurirController.js` <br> `_updateStatus()` | Menyatukan otorisasi, perubahan pengiriman, pembuatan histori *tracking*, dan penentuan logika transisi rute dalam satu alur besar. | SRP, High Cohesion | Fungsi membesar secara tumpang tindih (*God Method*). Perubahan pada alur rute atau *tracking* rawan menciptakan cacat (*bug*) tambahan. |
-| 6 |  |  |  |  |
-| 7 |  |  |  |  |
-| 8 |  |  |  |  |
-| 9 |  |  |  |  |
-| 10 |  |  |  |  |
+| 6 | `backend/src/controllers/paymentController.js` <br> `pembayaranLogistik()` | Controller menangani logika HTTP, pemanggilan gateway, sekaligus orkestrasi pembaruan state pada tiga entitas database berbeda secara manual. | SRP, High Cohesion | Controller terlalu gemuk (*Fat Controller*). Kegagalan pada salah satu operasi database sulit ditangani di dalam controller. |
+| 7 | `backend/src/controllers/adminController.js` <br> `getKeuangan()` | Mengeksekusi banyak kueri SQL agregasi untuk laporan keuangan dan menyisipkan manipulasi data di dalam fungsi HTTP. | SRP, MVC Pattern | Logika komputasi laporan keuangan bercampur dengan HTTP, mempersulit pengujian unit dan daur ulang kode. |
+| 8 | `backend/src/controllers/trackingController.js` <br> `getTracking()` | Memanggil beberapa model lalu merangkai relasi data *tracking* secara manual di Controller. | SRP, High Cohesion | Logika penggabungan relasi menjadi terpusat di entri *web*, tidak dapat didaur ulang jika sistem lain butuh data serupa. |
+| 9 | `backend/src/services/shipmentService.js` <br> `processShipmentRequest()` | Terdapat percabangan kondisional kaku (hardcoded) untuk memvalidasi batas jarak maksimum berdasarkan tipe pengiriman spesifik (Sameday/Nextday). | LSP, OCP | Tipe pengiriman tidak memiliki sifat substitusi yang mandiri. Menambah layanan baru mewajibkan modifikasi *ShipmentService*. |
+| 10 | `backend/src/services/costCalculatorService.js` (dan Service lainnya) | Melempar objek `Error` standar tanpa properti HTTP `status`, berbeda dengan service lain yang menyertakan atribut tersebut secara tak beraturan. | LSP (Exception Rule) | Ketidakkonsistenan kontrak *error* menyebabkan antarmuka penangkap (Controller) gagal merespon status HTTP secara presisi (biasa *default* ke 500). |
 | 11 |  |  |  |  |
 | 12 |  |  |  |  |
 | 13 |  |  |  |  |
@@ -351,50 +351,148 @@ class PaymentService {
 ```
 - **Dampak Perbaikan**: Kepaduan (*cohesion*) pada *controller* HTTP meningkat drastis. Perubahan logika aturan rute (*routing*) atau format penulisan log sistem di masa depan tidak lagi merusak *controller* HTTP, melainkan dapat diatur terpusat di `ShipmentUpdateService`.
 
-### 8.6 Temuan 6
-- **Lokasi Kode**: 
-- **Kode Sebelum Refactoring**:
-- **Masalah yang Ditemukan**: 
-- **Prinsip yang Dilanggar**: 
-- **Strategi Refactoring**: 
-- **Kode Sesudah Refactoring**:
-- **Dampak Perbaikan**: 
+### 8.6 Temuan 6 - God Method pada Payment Controller (Orkestrasi Database di Controller)
 
-### 8.7 Temuan 7
-- **Lokasi Kode**: 
+- **Lokasi Kode**: `backend/src/controllers/paymentController.js` dan method `pembayaranLogistik()`
 - **Kode Sebelum Refactoring**:
-- **Masalah yang Ditemukan**: 
-- **Prinsip yang Dilanggar**: 
-- **Strategi Refactoring**: 
+```javascript
+// ... setelah processPayment via gateway sukses
+await Shipment.updateStatus(order_id, 'PICKUP', result.data.transaction_id);
+await TrackingLog.insert(shipment_id, 'PICKUP', 'Pembayaran ongkir berhasil, menunggu kurir');
+await TransactionLog.insertSuccess({ /* payload riwayat transaksi... */ });
+return respond.success(res, { /* response data */ });
+```
+- **Masalah yang Ditemukan**: Controller bertindak sebagai "God Method" yang secara manual mengatur pembaruan state pada tiga entitas database berbeda (`Shipment`, `TrackingLog`, `TransactionLog`) setelah berinteraksi dengan API gateway.
+- **Prinsip yang Dilanggar**: Single Responsibility Principle (SRP) dan High Cohesion. Logika bisnis persisten pasca-pembayaran bercampur dengan logika HTTP.
+- **Strategi Refactoring**: Pindahkan seluruh orkestrasi pembaruan state database ke dalam sebuah *Service* khusus (misal `PaymentResultService`), atau delegasikan hal ini sebagai lanjutan operasi di `smartbankService`. Controller murni memanggil layanan tersebut lalu mengembalikan hasil HTTP.
 - **Kode Sesudah Refactoring**:
-- **Dampak Perbaikan**: 
+```javascript
+// backend/src/controllers/paymentController.js
+const result = await paymentOrchestratorService.processPaymentAndLog(req.body, user_id);
+if (result.success) {
+  return respond.success(res, result.data);
+} else {
+  return respond.error(res, 'PAYMENT_FAILED', result.message, 402, result.error);
+}
+```
+- **Dampak Perbaikan**: Pemisahan tanggung jawab yang jelas. Controller menjadi sangat ramping (*thin controller*), dan logika transaksi mutasi *database* terpusat sehingga jauh lebih aman serta mudah diuji (testable).
 
-### 8.8 Temuan 8
-- **Lokasi Kode**: 
-- **Kode Sebelum Refactoring**:
-- **Masalah yang Ditemukan**: 
-- **Prinsip yang Dilanggar**: 
-- **Strategi Refactoring**: 
-- **Kode Sesudah Refactoring**:
-- **Dampak Perbaikan**: 
+### 8.7 Temuan 7 - Query Agregasi Keuangan Kompleks Terikat di Controller
 
-### 8.9 Temuan 9
-- **Lokasi Kode**: 
+- **Lokasi Kode**: `backend/src/controllers/adminController.js` dan method `getKeuangan()`
 - **Kode Sebelum Refactoring**:
-- **Masalah yang Ditemukan**: 
-- **Prinsip yang Dilanggar**: 
-- **Strategi Refactoring**: 
+```javascript
+async getKeuangan(req, res) {
+  const [[totals]] = await db.query(`SELECT SUM(amount) as total_pendapatan...`);
+  const [typeRows] = await db.query(`SELECT s.tipe_pengiriman, SUM(t.amount)...`);
+  // Logika perulangan for untuk mengisi tanggal kosong (fill missing dates)
+  // ...
+  respond.success(res, 'Data Keuangan', { ... });
+}
+```
+- **Masalah yang Ditemukan**: Fungsi mengeksekusi beragam kueri SQL agregasi finansial rumit dan melakukan manipulasi iterasi array (seperti logika pengisian tanggal *missing dates*) langsung secara gamblang di dalam layer HTTP.
+- **Prinsip yang Dilanggar**: MVC Pattern Violation dan SRP. Layer HTTP mengatur dan memproses langsung logika kalkulasi statistik bisnis.
+- **Strategi Refactoring**: Buat `AdminFinanceService` yang membungkus seluruh tahap kueri (*database fetch*) hingga perakitan tren data harian ke dalam satu fungsi abstraksi penuh.
 - **Kode Sesudah Refactoring**:
-- **Dampak Perbaikan**: 
+```javascript
+// backend/src/controllers/adminController.js
+async getKeuangan(req, res) {
+  try {
+    const dataKeuangan = await adminFinanceService.generateFinanceReport();
+    respond.success(res, 'Data Keuangan', dataKeuangan);
+  } catch (err) {
+    respond.error(res, 'FETCH_FAILED', err.message, 500);
+  }
+}
+```
+- **Dampak Perbaikan**: Kode Controller bebas dari "Fat Controller". Merubah kerangka tabel kalkulasi atau format perhitungan tren laporan keuangan tidak akan memaksa sentuhan apa pun ke ranah API/Routing di depannya.
 
-### 8.10 Temuan 10
-- **Lokasi Kode**: 
+### 8.8 Temuan 8 - Controller Manual Merangkai Data Relasional (Tracking)
+
+- **Lokasi Kode**: `backend/src/controllers/trackingController.js` dan method `getTracking()`
 - **Kode Sebelum Refactoring**:
-- **Masalah yang Ditemukan**: 
-- **Prinsip yang Dilanggar**: 
-- **Strategi Refactoring**: 
+```javascript
+const shipment = await Shipment.findByOrderId(order_id);
+const riwayat = await TrackingLog.findByShipmentId(shipment.id);
+const ruteCabang = await ShipmentRoute.getByShipmentId(shipment.id);
+return respond.success(res, 'Data tracking', { ...shipment, riwayat, ruteCabang });
+```
+- **Masalah yang Ditemukan**: Controller memanggil tiga model berbeda secara independen dan menyusun (stitching) relasi kompleks data *tracking* itu menjadi satu kesatuan objek pelaporan manual.
+- **Prinsip yang Dilanggar**: High Cohesion dan SRP. Pembentukan paket relasi *domain* bisnis sebaiknya bukan tanggung jawab agen pemandu interaksi HTTP.
+- **Strategi Refactoring**: Sediakan fungsi mandiri di dalam layer `TrackingService` (misal `getFullTrackingData()`) yang merangkai dan menjamin keutuhan data relasional tersebut sebelum diserahkan ke *caller*.
 - **Kode Sesudah Refactoring**:
-- **Dampak Perbaikan**: 
+```javascript
+// backend/src/controllers/trackingController.js
+async getTracking(req, res) {
+  try {
+    const trackingData = await trackingService.getFullTrackingData(req.params.order_id);
+    return respond.success(res, 'Data tracking', trackingData);
+  } catch (err) {
+    return respond.error(res, err.code, err.message, err.status);
+  }
+}
+```
+- **Dampak Perbaikan**: Pembuatan data historis lengkap menjadi entitas tunggal di dalam layer logikanya. Jika ada platform lain (seperti *cron job* atau modul admin) yang membutuhkan payload paket serupa, fungsi abstraksi tersebut dapat didaur ulang seketika.
+
+### 8.9 Temuan 9 - Pelanggaran LSP pada Validasi Jarak Layanan Pengiriman
+
+- **Lokasi Kode**: `backend/src/services/shipmentService.js` dan method `processShipmentRequest()`
+- **Kode Sebelum Refactoring**:
+```javascript
+// Validasi batas jarak berdasarkan tipe secara statis dan hardcoded
+if (tipePengiriman === 'sameday' && jarakKm > maxSameday) {
+  const err = new Error(`Jarak terlalu jauh untuk Sameday...`);
+  err.status = 400; throw err;
+}
+if (tipePengiriman === 'nextday' && jarakKm > maxNextday) {
+  const err = new Error(`Jarak terlalu jauh untuk Nextday...`);
+  err.status = 400; throw err;
+}
+```
+- **Masalah yang Ditemukan**: `ShipmentService` menggunakan pemeriksaan tipe (*type-checking*) bersyarat secara eksplisit untuk mengetahui apakah kelas/tipe pengiriman turunan dapat melayani rute. Kelas-kelas strategi layanan (*subtipe* fungsional) ini tidak murni mensubstitusi abstraksinya secara polimorfik.
+- **Prinsip yang Dilanggar**: Liskov Substitution Principle (LSP) dan Open/Closed Principle (OCP). Subtipe tidak benar-benar substitutabel jika fungsi *caller* harus mengerti detail internal dan mensyaratkan inspeksi jenis subtipe yang sedang digunakan.
+- **Strategi Refactoring**: Delegasikan tugas validasi ini ke instansi kelas strategi pengiriman masing-masing (*Strategy Pattern*). Panggil metode abstraksi secara umum tanpa mengamati wujud tipenya.
+- **Kode Sesudah Refactoring**:
+```javascript
+// backend/src/services/shipmentService.js
+// strategy didefinisikan berdasarkan tipePengiriman
+const shippingStrategy = ShippingStrategyFactory.getStrategy(tipePengiriman);
+
+// LSP ditegakkan, service percaya penuh pada kontrak metode validateDistance
+shippingStrategy.validateDistance(jarakKm);
+```
+- **Dampak Perbaikan**: Ekstensi tipe pengiriman masa depan dapat disubstitusikan ke dalam kode eksisting (*plug and play*) tanpa memerlukan modifikasi pada logika pembungkus utamanya.
+
+### 8.10 Temuan 10 - Pelanggaran LSP pada Penanganan Error Berbagai Service (Inconsistent Contract)
+
+- **Lokasi Kode**: `backend/src/services/costCalculatorService.js` vs service lain (seperti `shipmentService.js`)
+- **Kode Sebelum Refactoring**:
+```javascript
+// Di dalam costCalculatorService.js
+throw new Error('Tipe pengiriman tidak valid'); // Standard error, tanpa properti tambahan
+
+// Di tempat terpisah, misal shipmentService.js
+const err = new Error('Jarak terlalu jauh...');
+err.status = 400; 
+throw err; // Custom error property
+```
+- **Masalah yang Ditemukan**: Penanganan kegagalan (*Exception/Error Throwing*) pada berbagai fungsi internal dan *Service* melemparkan obyek eksepsi dengan struktur spesifikasi dan properti tambahan yang tidak konsisten.
+- **Prinsip yang Dilanggar**: Liskov Substitution Principle (LSP). Dalam kaitannya dengan pola *Exception*, objek turunan atau *service* pengganti dari suatu antarmuka harus mematuhi ekspektasi standar yang sama terkait *error handling*, agar blok penangkap (`catch`) di lapis atasnya bekerja mulus.
+- **Strategi Refactoring**: Bangun abstraksi antarmuka *Error* global. Perintahkan sistem agar senantiasa melempar turunan pengecualian (`AppError` atau `HttpError`) dengan properti dan penandatanganan metode yang seragam.
+- **Kode Sesudah Refactoring**:
+```javascript
+// backend/src/utils/AppError.js
+class AppError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// backend/src/services/costCalculatorService.js
+throw new AppError('Tipe pengiriman tidak valid', 400); // Konsisten dan Tersubstitusi
+```
+- **Dampak Perbaikan**: Ketika *Controller HTTP* menerima tangkapan galat (*catch error*), parameter `err.status` dapat diandalkan ada secara seragam pada seluruh jenis objek pelanggaran di sub-levelnya, mencegah *crash* fatal dan menjamin balasan 500 (*Internal Server Error*) yang sejati.
 
 ### 8.11 Temuan 11
 - **Lokasi Kode**: 
