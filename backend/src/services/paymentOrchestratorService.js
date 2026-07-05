@@ -22,7 +22,7 @@ class PaymentOrchestratorService {
       userId: user_id,
       ongkir,
       feeLay: fee_layanan,
-      totalBiaya
+      totalBiaya: total_biaya
     });
 
     if (result.success) {
