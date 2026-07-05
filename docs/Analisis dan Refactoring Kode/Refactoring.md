@@ -552,13 +552,143 @@ throw new AppError('Tipe pengiriman tidak valid', 400); // Konsisten dan Tersubs
 
 Diagram berikut menggambarkan kondisi ringkas sistem sebelum *refactoring*. Setiap *class* di *backend* ditulis dalam format hierarki untuk menunjukkan *dependency* fungsionalnya. Pada kondisi inisial ini, lapisan *controller* acapkali ditarik sebagai pusat gravitasi koordinasi (memuat siklus HTTP *request*, akses *database* masif, operasi keamanan JWT, hingga logika *payment*). Oleh karenanya, tingkat *coupling* operasional antara *controller* dengan model basis data sangat rapat dan sulit dibongkar (*monolithic function*).
 
-*(Diagram Class Sebelum Refactoring ditempatkan di sini)*
+```dot
+digraph ClassDiagramSebelum {
+  rankdir=TB;
+  node [shape=record, fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=10, color="gray50"];
+
+  subgraph cluster_controllers {
+    label = "Lapisan Controller (Fat Controllers)";
+    style = dashed;
+    color = "maroon";
+    
+    adminController [label="{adminController|+ getOverview()\l+ getKeuangan()\l+ createUser()\l|* Eksekusi Raw SQL\l* Business Logic Hashing\l}"];
+    kurirController [label="{kurirController|+ getTugas()\l+ _updateStatus()\l|* Raw SQL JOIN\l* Manipulasi Rute Manual\l}"];
+    paymentController [label="{paymentController|+ pembayaranLogistik()\l|* Integrasi API External\l* Update 3 Entitas DB\l}"];
+  }
+
+  subgraph cluster_services {
+    label = "Lapisan Service (Tanggung Jawab Tercampur)";
+    style = dashed;
+    color = "darkorange";
+    
+    costCalculatorService [label="{costCalculatorService|+ hitungOngkir()\l|* Kondisional If-Else Kaku\l}"];
+    userService [label="{userService|+ registerCustomer()\l+ assignDeliveryRoute()\l|* Fitur Publik & Operasional\l}"];
+    smartbankAPI [label="{SmartBankAPI|+ deductFunds()\l|* Hardcoded Class\l}"];
+  }
+
+  subgraph cluster_models {
+    label = "Lapisan Data / Model";
+    style = dashed;
+    color = "forestgreen";
+    
+    Database [shape=cylinder, label="Database MySQL\n(Terkoneksi Langsung)"];
+    Shipment [label="{Shipment Model|...}"];
+    TrackingLog [label="{TrackingLog Model|...}"];
+    TransactionLog [label="{TransactionLog Model|...}"];
+  }
+
+  // Hubungan yang sangat berkerut (Coupling Tinggi)
+  adminController -> Database [label="Kueri SQL Langsung", color="red", style="bold"];
+  
+  kurirController -> Database [label="Kueri SQL Langsung", color="red", style="bold"];
+  kurirController -> Shipment;
+  kurirController -> TrackingLog;
+  
+  paymentController -> smartbankAPI [label="Instansiasi Statis"];
+  paymentController -> Shipment;
+  paymentController -> TrackingLog;
+  paymentController -> TransactionLog;
+  
+  userService -> Database [label="Kueri SQL Langsung"];
+  
+  // Catatan: Model yang dipanggil bypass service
+}
+```
 
 ## 10. Class Diagram Sesudah Refactoring
 
 Diagram berikut menyajikan rancangan peta *refactoring* yang diusulkan. *Class* dan lapisan (*layer*) dipilah rapi guna mencerahkan pengisolasian tanggung jawab masing-masing (*Separation of Concerns*). Beban kerja *Controller* dipangkas murni menjadi pengatur kanal navigasi web (rute HTTP). Proses kalkulasi dan penulisan terhubung (*business rule*) diamankan di lingkup *Service*, sedangkan interaksi basis data dibungkus di dalam *Repository/Model Adapter*. Desain ini memastikan pelonggaran *coupling* yang sangat tajam tanpa mencederai fitur sistem.
 
-*(Diagram Class Sesudah Refactoring ditempatkan di sini)*
+```dot
+digraph ClassDiagramSesudah {
+  rankdir=TB;
+  node [shape=record, fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=10, color="gray50"];
+
+  subgraph cluster_controllers {
+    label = "Lapisan Controller (Thin Controllers)";
+    style = dashed;
+    color = "maroon";
+    
+    adminController [label="{adminController|+ getOverview()\l+ getKeuangan()\l+ createUser()\l|* Hanya Menerima HTTP Req\l}"];
+    kurirController [label="{kurirController|+ getTugas()\l+ _updateStatus()\l|* Delegasi ke Service\l}"];
+    paymentController [label="{paymentController|+ pembayaranLogistik()\l|* Murni Pemandu Navigasi\l}"];
+  }
+
+  subgraph cluster_services {
+    label = "Lapisan Service (High Cohesion & SRP)";
+    style = dashed;
+    color = "darkorange";
+    
+    adminDashboardService [label="{AdminDashboardService|+ getOverviewStats()\l+ generateFinanceReport()\l}"];
+    shipmentUpdateService [label="{ShipmentUpdateService|+ updateStatus()\l}"];
+    kurirOperationService [label="{KurirOperationService|+ getAssignedTasks()\l+ assignDeliveryRoute()\l}"];
+    customerAuthService [label="{CustomerAuthService|+ registerCustomer()\l}"];
+    paymentOrchestrator [label="{PaymentOrchestratorService|+ processPaymentAndLog()\l}"];
+    
+    costCalculator [label="{CostCalculatorService|+ hitungOngkir()\l}"];
+    shippingStrategy [shape=component, label="«Interface»\nShippingStrategy\n+ calculate()\l+ validateDistance()"];
+  }
+  
+  subgraph cluster_adapters {
+    label = "Lapisan Adapter & Eksternal (DIP)";
+    style = dashed;
+    color = "purple";
+    
+    paymentGateway [shape=component, label="«Interface»\nPaymentGateway\n+ pay()"];
+    smartbankAdapter [label="{SmartBankAdapter|+ pay()\l}"];
+  }
+
+  subgraph cluster_models {
+    label = "Lapisan Model & Repository (Akses Data Terisolasi)";
+    style = dashed;
+    color = "forestgreen";
+    
+    Database [shape=cylinder, label="Database MySQL"];
+    ShipmentRepo [label="{ShipmentRepository|...}"];
+    TrackingLogRepo [label="{TrackingLogRepository|...}"];
+    UserRepo [label="{UserRepository|...}"];
+  }
+
+  // Relasi Controller ke Service
+  adminController -> adminDashboardService;
+  adminController -> customerAuthService;
+  kurirController -> kurirOperationService;
+  kurirController -> shipmentUpdateService;
+  paymentController -> paymentOrchestrator;
+
+  // Polimorfisme / DIP
+  costCalculator -> shippingStrategy [arrowhead="odiamond", label="menggunakan"];
+  smartbankAdapter -> paymentGateway [arrowhead="empty", style="dashed", label="implements"];
+  paymentOrchestrator -> paymentGateway [label="injeksi (DIP)"];
+
+  // Service ke Model/Repository
+  adminDashboardService -> ShipmentRepo;
+  shipmentUpdateService -> ShipmentRepo;
+  shipmentUpdateService -> TrackingLogRepo;
+  kurirOperationService -> ShipmentRepo;
+  customerAuthService -> UserRepo;
+  paymentOrchestrator -> ShipmentRepo;
+  paymentOrchestrator -> TrackingLogRepo;
+
+  // Model ke Database
+  ShipmentRepo -> Database;
+  TrackingLogRepo -> Database;
+  UserRepo -> Database;
+}
+```
 
 ## 11. Analisis Penerapan SOLID
 
