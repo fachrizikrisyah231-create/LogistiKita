@@ -786,7 +786,7 @@ Pengujian keenam fitur di atas sejatinya telah berhasil memvalidasi keseluruhan 
 Berikut adalah kumpulan *screenshot* hasil pengujian fungsional aplikasi sesudah dilakukan *refactoring*:
 
 ![Screenshot Login Kustomer](screenshots/login-kustomer.png)
-*Gambar 3. Login kustomer*
+*Gambar 3. Login kustomer berhasil*
 
 ![Screenshot Pembuatan Pengiriman](screenshots/create-shipment.png)
 *Gambar 4. Pembuatan pengiriman & ongkir*
@@ -810,3 +810,86 @@ Berdasarkan analisis kode, Platform LogistiKita pada awalnya sudah menggunakan a
 Namun, sebelum dilakukan *refactoring*, beberapa bagian kode masih memerlukan perbaikan mendesak terkait kemudahan pemeliharaan (*maintainability*). Walaupun sudah ada *Service*, beberapa lapisan *Controller* (seperti pengatur pembayaran, rute kurir, admin, dan *tracking*) kerap mem- *bypass* layanan tersebut dan mengambil alih tanggung jawab ganda (seperti memanipulasi *database* secara manual) sehingga membengkak menjadi *Fat Controller*. Di sisi lain, *Service* yang ada (seperti perhitungan tarif ongkir dan layanan *user*) juga memiliki logika yang sangat kaku, penuh percabangan bertumpuk (*hardcode*), atau mencampuradukkan berbagai peran sekaligus (*Fat Service*).
 
 Setelah dilakukan *refactoring*, struktur aplikasi menjadi jauh lebih teratur. Kami memecah *Service* yang membengkak dan menambahkan beberapa lapisan *Service* khusus yang baru (seperti `ShipmentUpdateService` dan `PaymentOrchestratorService`), menerapkan *Strategy Pattern* pada kalkulator tarif logistik, dan mengisolasi kueri SQL ke modul khusus. Dengan pemisahan ini, *Controller* kembali ramping dan murni hanya mengurus antarmuka lalu lintas web. Logika bisnis di dalam *Service* juga menjadi jauh lebih kohesif dan mudah diuji, sehingga penambahan jenis layanan pengiriman baru kelak dapat dilakukan dengan risiko yang amat minim. Proses *refactoring* ini sangat membantu dalam memahami betapa pentingnya penegakan prinsip-prinsip SOLID, Clean Code, High Cohesion, dan Low Coupling pada pengembangan perangkat lunak dunia nyata.
+
+## 16. Lampiran
+
+### 16.1 Link Repository
+
+```text
+https://github.com/fachrizikrisyah231-create/LogistiKita
+```
+
+### 16.2 Branch Sebelum dan Sesudah Refactoring
+
+| Jenis Branch | Nama Branch |
+|---|---|
+| Branch sebelum refactoring | `main` |
+| Branch sesudah refactoring | `after-refactoring` |
+
+### 16.3 Daftar Commit Penting
+
+| No | Commit | Deskripsi Perubahan |
+|---|---|---|
+| 1 | `cfa5f61` | refactoring: Temuan 1: Ekstraksi AdminDashboardService |
+| 2 | `b259762` | refactoring: Temuan 2: Strategy Pattern pada CostCalculatorService |
+| 3 | `50080dc` | refactoring: Temuan 3: Pemisahan CustomerAuthService dan KurirOperationService |
+| 4 | `3992f17` | refactoring: Temuan 4: Dependency Injection pada PaymentGateway |
+| 5 | `8a54150` | refactoring: Temuan 5: Ekstraksi ShipmentUpdateService |
+| 6 | `c0c4eeb` | refactoring: Temuan 6-10: Pendelegasian Orchestrator, Finance, Tracking & AppError |
+| 7 | `8307499` | refactoring: Perbaikan kompatibilitas pasca refactoring |
+
+### 16.4 Daftar File yang Dianalisis
+
+| No | File | Peran / Perubahan Utama |
+|---|---|---|
+| 1 | `backend/src/controllers/adminController.js` | Modul pengelola dasbor admin dan laporan keuangan. Refactoring memindahkan beban *query* agregasi. |
+| 2 | `backend/src/controllers/kurirController.js` | Modul pembaruan status pengiriman. Refactoring mengisolasi manipulasi data ke *Service* khusus. |
+| 3 | `backend/src/controllers/paymentController.js` | Menerima permintaan pembayaran. Orkestrasi multi-tabel pasca-pembayaran dipindahkan. |
+| 4 | `backend/src/controllers/trackingController.js` | Endpoint pencarian riwayat paket. Logika *join* relasi ditarik keluar menjadi *Service*. |
+| 5 | `backend/src/services/costCalculatorService.js` | Kalkulator ongkos kirim. Refactoring menerapkan *Strategy Pattern* agar fleksibel dan dapat diperluas. |
+| 6 | `backend/src/services/userService.js` | Menampung fungsi autentikasi publik dan operasional kurir. Refactoring memisahkannya jadi dua layanan berbeda. |
+| 7 | `backend/src/services/paymentService.js` | Komunikasi ke *Payment Gateway*. Refactoring menerapkan abstraksi kelas pihak ketiga. |
+| 8 | `backend/src/services/shipmentService.js` | Layanan pendaftaran paket. Pengecekan limit jarak dirombak agar menjamin substitusi (*LSP*). |
+| 9 | `backend/src/services/shippingStrategies.js` | **(File Baru)** Pemisahan pola perhitungan tarif (*Sameday/Nextday/Reguler*) secara polimorfisme. |
+| 10 | `backend/src/services/adminFinanceService.js` | **(File Baru)** Layanan ekstraksi dan agregasi statistik tren keuangan khusus admin. |
+| 11 | `backend/src/services/adminDashboardService.js` | **(File Baru)** Mengelola penyajian statistik umum (*overview*) pengiriman. |
+| 12 | `backend/src/services/trackingService.js` | **(File Baru)** Mengabstraksi logika penggabungan (*stitching*) entitas pelacakan dan rute cabang. |
+| 13 | `backend/src/services/paymentOrchestratorService.js` | **(File Baru)** Pendelegasian eksekusi pencatatan mutasi 3 tabel secara terpusat (*Dependency Injection*). |
+| 14 | `backend/src/services/smartbankAdapter.js` | **(File Baru)** Jembatan *adapter* terisolasi untuk interaksi dengan API SmartBank. |
+| 15 | `backend/src/services/customerAuthService.js` | **(File Baru)** Pecahan dari `userService` yang secara murni fokus melayani otentikasi pengguna publik. |
+| 16 | `backend/src/services/kurirOperationService.js` | **(File Baru)** Pecahan dari `userService` yang secara murni fokus pada penugasan operasional kurir logistik. |
+| 17 | `backend/src/utils/CustomError.js` | **(File Baru)** Kelas pewaris *Error* untuk standardisasi penangkapan anomali agar respons HTTP tetap 500 jika tidak sesuai. |
+
+### 16.5 Rekomendasi Struktur Folder Setelah Refactoring
+
+```text
+backend/src/
+|-- controllers/
+|   |-- adminController.js
+|   |-- kurirController.js
+|   |-- paymentController.js
+|   |-- trackingController.js
+|-- middleware/
+|   |-- authMiddleware.js
+|-- models/
+|   |-- Shipment.js
+|   |-- TrackingLog.js
+|-- routes/
+|   |-- logistikitaRoutes.js
+|-- services/
+|   |-- adminDashboardService.js
+|   |-- adminFinanceService.js
+|   |-- costCalculatorService.js
+|   |-- customerAuthService.js
+|   |-- kurirOperationService.js
+|   |-- paymentOrchestratorService.js
+|   |-- paymentService.js
+|   |-- shipmentService.js
+|   |-- shippingStrategies.js
+|   |-- smartbankAdapter.js
+|   |-- trackingService.js
+|-- utils/
+|   |-- constants.js
+|   |-- CustomError.js
+|   |-- logger.js
+```
