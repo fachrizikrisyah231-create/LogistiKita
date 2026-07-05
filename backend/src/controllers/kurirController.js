@@ -4,6 +4,7 @@ const Shipment = require('../models/Shipment');
 const respond = require('../utils/responseHelper');
 const db = require('../config/database');
 const ShipmentRoute = require('../models/ShipmentRoute');
+const { SHIPMENT_STATUS } = require('../utils/constants');
 
 class KurirController {
   constructor() {
@@ -62,6 +63,11 @@ class KurirController {
       const { branch_id, keterangan } = req.body;
       const kurirId = req.user.id;
 
+      const validStatuses = Object.values(SHIPMENT_STATUS);
+      if (!validStatuses.includes(status)) {
+        return respond.error(res, 'INVALID_STATUS', 'Status tidak dikenali', 400);
+      }
+
       const [rows] = await db.query('SELECT * FROM shipments WHERE id = ?', [id]);
       if (rows.length === 0) return respond.error(res, 'NOT_FOUND', 'Pengiriman tidak ditemukan', 404);
       
@@ -107,12 +113,12 @@ class KurirController {
     }
   }
 
-  async pickup(req, res) { return this._updateStatus(req, res, 'PICKUP', ['PENDING'], 'Kurir menuju lokasi penjemputan'); }
-  async tibaCabang(req, res) { return this._updateStatus(req, res, 'AT_BRANCH', ['PICKUP', 'IN_TRANSIT'], 'Paket tiba di cabang'); }
-  async lanjutTransit(req, res) { return this._updateStatus(req, res, 'IN_TRANSIT', ['AT_BRANCH', 'PICKUP'], 'Paket dalam perjalanan (transit)'); }
-  async antar(req, res) { return this._updateStatus(req, res, 'OUT_FOR_DELIVERY', ['AT_BRANCH', 'PICKUP'], 'Kurir sedang mengantar paket ke alamat tujuan'); }
-  async delivered(req, res) { return this._updateStatus(req, res, 'DELIVERED', ['OUT_FOR_DELIVERY'], 'Paket berhasil dikirim'); }
-  async gagal(req, res) { return this._updateStatus(req, res, 'FAILED', null, 'Pengiriman gagal'); }
+  async pickup(req, res) { return this._updateStatus(req, res, SHIPMENT_STATUS.PICKUP, [SHIPMENT_STATUS.PENDING], 'Kurir menuju lokasi penjemputan'); }
+  async tibaCabang(req, res) { return this._updateStatus(req, res, SHIPMENT_STATUS.AT_BRANCH, [SHIPMENT_STATUS.PICKUP, SHIPMENT_STATUS.IN_TRANSIT], 'Paket tiba di cabang'); }
+  async lanjutTransit(req, res) { return this._updateStatus(req, res, SHIPMENT_STATUS.IN_TRANSIT, [SHIPMENT_STATUS.AT_BRANCH, SHIPMENT_STATUS.PICKUP], 'Paket dalam perjalanan (transit)'); }
+  async antar(req, res) { return this._updateStatus(req, res, SHIPMENT_STATUS.OUT_FOR_DELIVERY, [SHIPMENT_STATUS.AT_BRANCH, SHIPMENT_STATUS.PICKUP], 'Kurir sedang mengantar paket ke alamat tujuan'); }
+  async delivered(req, res) { return this._updateStatus(req, res, SHIPMENT_STATUS.DELIVERED, [SHIPMENT_STATUS.OUT_FOR_DELIVERY], 'Paket berhasil dikirim'); }
+  async gagal(req, res) { return this._updateStatus(req, res, SHIPMENT_STATUS.FAILED, null, 'Pengiriman gagal'); }
 }
 
 module.exports = new KurirController();
