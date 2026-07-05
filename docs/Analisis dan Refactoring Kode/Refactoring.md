@@ -607,6 +607,12 @@ digraph ClassDiagramSebelum {
 }
 ```
 
+![Class Diagram Sebelum Refactoring](asset/before%20refactoring.png)
+*Gambar 1. Class Diagram Sebelum Refactoring*
+
+**Interpretasi:**
+Diagram di atas menunjukkan bahwa kelas-kelas pengatur alur web (*Controllers* seperti `adminController` dan `kurirController`) terhubung secara langsung dan mengikat erat entitas *database* MySQL. Ketergantungan ini menyebabkan level *coupling* yang sangat tinggi (ditandai dengan panah merah). Selain itu, *Controller* menangani terlalu banyak urusan operasional secara sepihak (seperti memodifikasi rute rute secara manual, mengeksekusi *raw* SQL, dan memanggil integrasi eksternal *SmartBank* secara statis). Keadaan ini menumpuk beban pada *Controller* sehingga menciptakan *Fat Controller* yang melanggar prinsip *Single Responsibility*.
+
 ## 10. Class Diagram Sesudah Refactoring
 
 Diagram berikut menyajikan rancangan peta *refactoring* yang diusulkan. *Class* dan lapisan (*layer*) dipilah rapi guna mencerahkan pengisolasian tanggung jawab masing-masing (*Separation of Concerns*). Beban kerja *Controller* dipangkas murni menjadi pengatur kanal navigasi web (rute HTTP). Proses kalkulasi dan penulisan terhubung (*business rule*) diamankan di lingkup *Service*, sedangkan interaksi basis data dibungkus di dalam *Repository/Model Adapter*. Desain ini memastikan pelonggaran *coupling* yang sangat tajam tanpa mencederai fitur sistem.
@@ -689,6 +695,12 @@ digraph ClassDiagramSesudah {
   UserRepo -> Database;
 }
 ```
+
+![Class Diagram Sesudah Refactoring](asset/after%20refactoring.png)
+*Gambar 2. Class Diagram Sesudah Refactoring*
+
+**Interpretasi:**
+Setelah *refactoring*, *Controller* telah dirampingkan dan hanya bertugas menangani navigasi web, mendelegasikan seluruh eksekusi logika bisnis berat kepada lapisan *Service* (seperti `ShipmentUpdateService` dan `PaymentOrchestratorService`). Operasi *database* juga diisolasi lebih jauh ke dalam antarmuka terpusat *Repository*. Dengan diterapkannya abstraksi / injeksi dependensi (*DIP*) pada *PaymentGateway* dan penerapan *Strategy Pattern* pada kalkulator tarif, keterikatan antar kelas tingkat tinggi menjadi sangat longgar (Low Coupling). Setiap modul kini secara presisi berfokus pada satu ranah tugas yang kohesif.
 
 ## 11. Analisis Penerapan SOLID
 
