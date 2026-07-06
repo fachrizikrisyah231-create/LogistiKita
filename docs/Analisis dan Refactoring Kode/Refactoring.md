@@ -1,5 +1,5 @@
 # Laporan Analisis dan Refactoring Kode
-Platform LogistiKita
+Aplikasi LogistiKita
 
 | Jenis Dokumen | Contoh laporan proyek aplikasi web |
 |---|---|
@@ -13,7 +13,7 @@ Dokumen ini disusun sebagai laporan proyek untuk topik analisis dan refactoring 
 
 | Komponen | Isi |
 |---|---|
-| Nama Aplikasi | Platform LogistiKita |
+| Nama Aplikasi | LogistiKita |
 | Jenis Aplikasi | Aplikasi Web |
 | Pola Arsitektur | MVC Node.js (Backend) dan Next.js (Frontend) |
 | Topik Praktikum | MVC, SOLID, Clean Code, High Cohesion, Low Coupling |
@@ -76,6 +76,9 @@ logistikita/
 |   |   |   |-- logistikitaRoutes.js
 |   |   |-- services/
 |   |   |   |-- costCalculatorService.js
+|   |   |   |-- paymentService.js
+|   |   |   |-- shipmentService.js
+|   |   |   |-- userService.js
 |   |   |   |-- ...
 |   |   |-- utils/
 |   |   |-- app.js
