@@ -27,6 +27,18 @@ Dokumen ini disusun sebagai laporan proyek untuk topik analisis dan refactoring 
 
 LogistiKita merupakan aplikasi web berbasis JavaScript (Node.js/Express dan React/Next.js) dengan database MySQL yang berperan sebagai *cost driver* untuk memastikan distribusi barang. Aplikasi ini digunakan untuk mengelola pengiriman barang, di mana setelah transaksi berhasil (dipicu otomatis oleh Marketplace/Supplier atau secara manual oleh kustomer), sistem akan menghitung ongkir, meminta integrasi pembayaran ongkir melalui SmartBank, dan meng-*update* status pengiriman kurir. Aplikasi ini tidak mengelola pembayaran langsung, melainkan hanya melakukan *request payment* ongkir ke SmartBank.
 
+Fitur yang teridentifikasi dari repository meliputi:
+
+| No | Fitur | Bukti File/Modul |
+|---|---|---|
+| 1 | Autentikasi dan Manajemen Pengguna | `backend/src/services/userService.js`, `backend/src/middleware/authMiddleware.js` |
+| 2 | Dashboard dan Laporan Admin | `backend/src/controllers/adminController.js` |
+| 3 | Pembuatan Pengiriman Baru | `backend/src/controllers/shipmentController.js`, `backend/src/services/shipmentService.js` |
+| 4 | Kalkulasi Biaya Pengiriman | `backend/src/services/costCalculatorService.js` |
+| 5 | Pemrosesan Pembayaran Logistik | `backend/src/controllers/paymentController.js`, `backend/src/services/paymentService.js` |
+| 6 | Pembaruan Status Kurir | `backend/src/controllers/kurirController.js` |
+| 7 | Pelacakan Riwayat Paket (Tracking) | `backend/src/controllers/trackingController.js` |
+
 ## 3. Tujuan Refactoring
 
 Refactoring pada studi kasus ini bertujuan untuk:
